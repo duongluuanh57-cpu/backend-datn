@@ -1,0 +1,15 @@
+node_modules
+dist
+.env
+.DS_Store
+*.log
+coverage
+.vscode
+.idea
+.antigravity
+.gemini
+pnpm-lock.yaml
+pnpm-workspace.yaml
+# Tests
+src/tests/
+vitest.config.ts
