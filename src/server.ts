@@ -8,7 +8,7 @@ import { initSentry } from './config/sentry.ts';
 initSentry();
 
 const app = buildApp();
-const PORT = 4000; // Ghi cứng cổng 4000 theo ý user để Render không override
+const PORT = parseInt(process.env.PORT || '4000', 10); // Dùng PORT từ Render, fallback 4000 cho local
 const HOST = process.env.HOST || '0.0.0.0';
 
 const start = async () => {
