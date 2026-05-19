@@ -552,6 +552,47 @@ JSON Schema:
         productInfo.segment = matchedTaxonomies.map(t => t.name).join(', ');
       }
 
+      // Convert tag string to tag ObjectId (find matching tag from database)
+      if (productInfo.tag && typeof productInfo.tag === 'string') {
+        const tagName = productInfo.tag.trim();
+        
+        // Tìm tag trong database
+        const { Tag } = await import('../models/Tag.ts');
+        const allTags = await Tag.find({ tenantId, status: 'active' }).lean();
+        
+        if (allTags.length > 0) {
+          // Normalize để so sánh
+          const normalizeName = (str: string) => str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+          const normalizedInput = normalizeName(tagName);
+          
+          // Tìm exact match
+          let matchedTag = allTags.find(t => normalizeName(t.name) === normalizedInput);
+          
+          // Nếu không có exact match, tìm partial match
+          if (!matchedTag) {
+            matchedTag = allTags.find(t => 
+              normalizeName(t.name).includes(normalizedInput) || 
+              normalizedInput.includes(normalizeName(t.name))
+            );
+          }
+          
+          // Nếu vẫn không tìm thấy, dùng tag đầu tiên
+          if (!matchedTag) {
+            matchedTag = allTags[0];
+            console.warn(`⚠️ No match found for tag: "${tagName}". Using first available: "${matchedTag.name}"`);
+          } else {
+            console.log(`✅ Matched tag: "${tagName}" -> "${matchedTag.name}"`);
+          }
+          
+          // Lưu tag ObjectId và tên
+          productInfo.tags = [matchedTag._id];
+          productInfo.tag = matchedTag.name;
+        } else {
+          console.warn(`⚠️ No active tags found in database. Tag "${tagName}" will not be saved.`);
+          delete productInfo.tag;
+        }
+      }
+
       const presetImages = [
         'https://i.ibb.co/LhJhpsKs/Midnight-Rose-copy.webp',
         'https://i.ibb.co/6cQSVbRX/Simple-Product-Golden-Amber.webp',
