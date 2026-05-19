@@ -71,4 +71,9 @@ export async function aiRoutes(app: FastifyInstance) {
   server.post('/feedback', {
     handler: AIController.handleFeedback,
   });
+
+  // POST /api/ai/scan-gallery-image - AI quét ảnh và tự động điền tiêu đề và câu trích dẫn song ngữ
+  server.post('/scan-gallery-image', {
+    handler: AIController.scanGalleryImage,
+  });
 }
