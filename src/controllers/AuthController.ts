@@ -170,14 +170,37 @@ export class AuthController {
       }
 
       const { passwordHash, ...safeUser } = updatedUser as any;
-
-      return reply.send({
-        success: true,
-        message: 'Cập nhật thông tin cá nhân thành công',
-        data: safeUser
-      });
-    } catch (err: any) {
-      return reply.status(500).send({ success: false, message: err.message });
-    }
-  }
-}
+ 
+       return reply.send({
+         success: true,
+         message: 'Cập nhật thông tin cá nhân thành công',
+         data: safeUser
+       });
+     } catch (err: any) {
+       return reply.status(500).send({ success: false, message: err.message });
+     }
+   }
+ 
+   /**
+    * GET /api/auth/me
+    * Yêu cầu: Đã xác thực
+    */
+   static async getMe(request: FastifyRequest, reply: FastifyReply) {
+     try {
+       const userId = (request as any).user?.userId;
+       if (!userId) throw new UnauthorizedError('Vui lòng đăng nhập');
+ 
+       const user = await UserRepository.findById(userId);
+       if (!user) throw new UnauthorizedError('Người dùng không tồn tại');
+ 
+       const { passwordHash, ...safeUser } = user as any;
+ 
+       return reply.send({
+         success: true,
+         data: safeUser
+       });
+     } catch (err: any) {
+       return reply.status(500).send({ success: false, message: err.message });
+     }
+   }
+ }

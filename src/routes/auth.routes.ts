@@ -50,12 +50,18 @@ export async function authRoutes(app: FastifyInstance) {
     }
   }, AuthController.changePassword);
 
-  // Cập nhật thông tin cá nhân (hỗ trợ đổi tên username)
+  // Lấy thông tin người dùng đang đăng nhập
+  typedApp.get('/me', {
+    preHandler: authMiddleware
+  }, AuthController.getMe);
+
+  // Cập nhật thông tin cá nhân (hỗ trợ đổi tên username và email)
   typedApp.patch('/update-profile', {
     preHandler: authMiddleware,
     schema: {
       body: z.object({
-        username: z.string().min(3, 'Tên người dùng phải có ít nhất 3 ký tự').max(50)
+        username: z.string().min(3, 'Tên người dùng phải có ít nhất 3 ký tự').max(50).optional(),
+        email: z.string().email('Email không đúng định dạng').optional()
       })
     }
   }, AuthController.updateProfile);
