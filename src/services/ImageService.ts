@@ -114,10 +114,15 @@ export class ImageService {
     let folder = 'image';
     if (options?.folder) {
       const cleanFolder = options.folder.trim().toLowerCase().replace(/\/+$/, '');
-      if (cleanFolder === 'products') folder = 'products';
-      else if (cleanFolder === 'brands') folder = 'brands';
-      else if (cleanFolder === 'avatars' || cleanFolder === 'avaters') folder = 'avatars';
-      else if (cleanFolder === 'image' || cleanFolder === 'images') folder = 'image';
+      if (cleanFolder === 'products' || cleanFolder.startsWith('products/')) {
+        folder = cleanFolder;
+      } else if (cleanFolder === 'brands' || cleanFolder.startsWith('brands/')) {
+        folder = cleanFolder;
+      } else if (cleanFolder === 'avatars' || cleanFolder === 'avaters' || cleanFolder.startsWith('avatars/')) {
+        folder = 'avatars';
+      } else if (cleanFolder === 'image' || cleanFolder === 'images' || cleanFolder.startsWith('image/')) {
+        folder = cleanFolder;
+      }
     }
 
     const compressed = await ImageService.optimizeForWeb(inputBuffer, maxWidth, quality);
