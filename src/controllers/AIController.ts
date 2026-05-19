@@ -255,7 +255,8 @@ ${globalInfo}
         availableScentGroups,
         availableConcentrations,
         availableSegments,
-        availableGenders
+        availableGenders,
+        availableSizes
       } = req.body as {
         name: string;
         brand?: string;
@@ -274,6 +275,7 @@ ${globalInfo}
         availableConcentrations?: string[];
         availableSegments?: string[];
         availableGenders?: string[];
+        availableSizes?: string[];
       };
 
       if (!name) return reply.status(400).send({ error: 'Name is required' });
@@ -300,6 +302,14 @@ Generate a comprehensive profile for the perfume named "${name}".
 
 LIST OF AVAILABLE BRANDS EXISTING IN OUR DATABASE:
 ${JSON.stringify(availableBrands || [])}
+
+LIST OF AVAILABLE SIZES/CAPACITIES IN OUR SYSTEM (YOU MUST USE ONLY THESE):
+${JSON.stringify(availableSizes || ['2ml', '5ml', '10ml', '30ml', '50ml', '75ml', '100ml', '125ml', '150ml'])}
+
+CRITICAL RULE FOR SIZES:
+- You MUST ONLY use sizes from the "LIST OF AVAILABLE SIZES/CAPACITIES" above
+- DO NOT create new sizes like "90ml" or any size not in the list
+- Each size variant must have a corresponding price calculated proportionally
 
 INSTRUCTIONS:
 1. Ensure the product name is provided (already validated). Generate only the product name and select a matching brand from the database brand list.
@@ -356,6 +366,7 @@ Respond with a raw draft containing all these details and reports.
       }
       
       const brandsJson = JSON.stringify(availableBrands || []);
+      const sizesJson = JSON.stringify(availableSizes || ['2ml', '5ml', '10ml', '30ml', '50ml', '75ml', '100ml', '125ml', '150ml']);
       const geminiPrompt = `
 You are an elite luxury perfume editor and JSON formatter.
 You are given the following draft profile of a perfume and market analysis reports generated in the previous stage:
@@ -366,11 +377,31 @@ ${geminiDraftOutput}
 
 YOUR STRICT ASSIGNMENT:
 1. Fact-check the draft: Ensure the selected brand strictly belongs to the database brands list: ${brandsJson}. Do NOT output any brand name outside this list under any circumstances!
-CRITICAL TAXONOMY RULES: To prevent database bloat, you MUST strongly prioritize selecting exact string matches from the provided lists below. ONLY IF there is absolutely no fitting category in the list, you may suggest a short, highly accurate new category string (except for gender).
-- scentGroup: Prioritize exactly one of ${JSON.stringify(availableScentGroups || [])}. Suggest a new one ONLY if no match exists.
-- concentration: Prioritize exactly one of ${JSON.stringify(availableConcentrations || [])}. Suggest a new one ONLY if no match exists.
-- segment: Prioritize exactly one of ${JSON.stringify(availableSegments || [])}. Suggest a new one ONLY if no match exists.
-- gender: MUST be exactly one of ${JSON.stringify(availableGenders || [])}. Do NOT invent new genders.
+
+CRITICAL TAXONOMY SELECTION RULES (MUST FOLLOW EXACTLY):
+You MUST select values from the existing database lists below. DO NOT create new values.
+
+- **scentGroup**: MUST be EXACTLY ONE of these: ${JSON.stringify(availableScentGroups || [])}
+  * If the draft suggests a scent group not in this list, find the CLOSEST MATCH from the list
+  * Example: If draft says "Hương gỗ ấm áp" but list has "Hương gỗ", use "Hương gỗ"
+  * Example: If draft says "Fresh Citrus" but list has "Hương cam chanh", use "Hương cam chanh"
+  * NEVER create new scent groups
+
+- **concentration**: MUST be EXACTLY ONE of these: ${JSON.stringify(availableConcentrations || [])}
+  * If the draft suggests a concentration not in this list, find the CLOSEST MATCH from the list
+  * Example: If draft says "Eau de Parfum Intense" but list has "Eau de Parfum", use "Eau de Parfum"
+  * NEVER create new concentrations
+
+- **segment**: MUST be EXACTLY ONE of these: ${JSON.stringify(availableSegments || [])}
+  * If the draft suggests a segment not in this list, find the CLOSEST MATCH from the list
+  * Example: If draft says "Cao cấp sang trọng" but list has "Cao cấp", use "Cao cấp"
+  * NEVER create new segments
+
+- **gender**: MUST be EXACTLY ONE of these: ${JSON.stringify(availableGenders || [])}
+  * NO EXCEPTIONS - only use values from this list
+  * If draft says "Nam giới", use "Nam"
+  * If draft says "Nữ giới", use "Nữ"
+  * If draft says "Unisex/Nam nữ đều dùng được", use "Unisex"
 
 2. Scent Description: Ensure the "description" field is beautifully refined in Vietnamese and contains these three exact bold sections:
    - **Mô tả hương thơm:**
@@ -379,7 +410,10 @@ CRITICAL TAXONOMY RULES: To prevent database bloat, you MUST strongly prioritize
 
 3. Pricing & Sizes:
    - Round suggested prices to the nearest 10,000 VNĐ.
-   - Read the draft capacity variants and their prices proposed in the draft. You MUST preserve the exact sizes (such as 2ml, 5ml, 10ml, 50ml, 100ml, etc. as analyzed and explained in the draft and sizeReport) and their calculated prices. Format the "size" field strictly as a comma-separated list of "size:price" (e.g., "2ml:90000, 5ml:220000, 10ml:420000, 100ml:2900000"). Do NOT hardcode or default to other sizes.
+   - CRITICAL SIZE RULE: You MUST ONLY use sizes from this exact list: ${sizesJson}
+   - DO NOT create new sizes like "90ml" or any size not in the system
+   - Read the draft capacity variants and their prices proposed in the draft. You MUST preserve ONLY the sizes that exist in the system list above (${sizesJson}). Format the "size" field strictly as a comma-separated list of "size:price" (e.g., "2ml:90000, 5ml:220000, 10ml:420000, 100ml:2900000"). 
+   - If the draft suggests a size not in the system list, replace it with the closest available size from the list.
 
 4. Detailed Analysis Reports (CRITICAL - MUST BE COMPREHENSIVE):
    
@@ -444,35 +478,76 @@ JSON Schema:
       // Convert taxonomy strings to ObjectIds
       const tenantId = (req as any).user?.tenantId || 'default-tenant';
       
-      // Helper function to find or create taxonomy
-      const findOrCreateTaxonomy = async (name: string, type: 'scent_group' | 'concentration' | 'segment') => {
-        const slug = name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-        let taxonomy = await ProductTaxonomy.findOne({ tenantId, type, slug });
-        if (!taxonomy) {
-          taxonomy = await ProductTaxonomy.create({ tenantId, type, name, slug, status: 'active' });
+      // Helper function to find best matching taxonomy (fuzzy match)
+      const findBestMatchTaxonomy = async (name: string, type: 'scent_group' | 'concentration' | 'segment') => {
+        // Lấy tất cả taxonomy của type này
+        const allTaxonomies = await ProductTaxonomy.find({ tenantId, type, status: 'active' }).lean();
+        
+        if (allTaxonomies.length === 0) {
+          console.warn(`⚠️ No ${type} found in database. Creating new one: ${name}`);
+          const slug = name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+          const newTaxonomy = await ProductTaxonomy.create({ tenantId, type, name, slug, status: 'active' });
+          return newTaxonomy._id;
         }
-        return taxonomy._id;
+        
+        // Chuẩn hóa tên để so sánh
+        const normalizeName = (str: string) => str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+        const normalizedInput = normalizeName(name);
+        
+        // Tìm exact match trước
+        const exactMatch = allTaxonomies.find(t => normalizeName(t.name) === normalizedInput);
+        if (exactMatch) {
+          console.log(`✅ Exact match found for ${type}: "${name}" -> "${exactMatch.name}"`);
+          return exactMatch._id;
+        }
+        
+        // Nếu không có exact match, tìm partial match (contains)
+        const partialMatch = allTaxonomies.find(t => 
+          normalizeName(t.name).includes(normalizedInput) || 
+          normalizedInput.includes(normalizeName(t.name))
+        );
+        
+        if (partialMatch) {
+          console.log(`⚠️ Partial match found for ${type}: "${name}" -> "${partialMatch.name}"`);
+          return partialMatch._id;
+        }
+        
+        // Nếu vẫn không tìm thấy, lấy taxonomy đầu tiên làm fallback
+        console.warn(`⚠️ No match found for ${type}: "${name}". Using first available: "${allTaxonomies[0].name}"`);
+        return allTaxonomies[0]._id;
       };
 
       // Convert scentGroup string to scentGroups array of ObjectIds
       if (productInfo.scentGroup && typeof productInfo.scentGroup === 'string') {
         const names = productInfo.scentGroup.split(',').map((s: string) => s.trim()).filter(Boolean);
-        productInfo.scentGroups = await Promise.all(names.map((name: string) => findOrCreateTaxonomy(name, 'scent_group')));
-        delete productInfo.scentGroup;
+        const matchedIds = await Promise.all(names.map((name: string) => findBestMatchTaxonomy(name, 'scent_group')));
+        productInfo.scentGroups = matchedIds;
+        
+        // Lấy lại tên để trả về cho frontend
+        const matchedTaxonomies = await ProductTaxonomy.find({ _id: { $in: matchedIds } }).lean();
+        productInfo.scentGroup = matchedTaxonomies.map(t => t.name).join(', ');
       }
 
       // Convert concentration string to concentrations array of ObjectIds
       if (productInfo.concentration && typeof productInfo.concentration === 'string') {
         const names = productInfo.concentration.split(',').map((s: string) => s.trim()).filter(Boolean);
-        productInfo.concentrations = await Promise.all(names.map((name: string) => findOrCreateTaxonomy(name, 'concentration')));
-        delete productInfo.concentration;
+        const matchedIds = await Promise.all(names.map((name: string) => findBestMatchTaxonomy(name, 'concentration')));
+        productInfo.concentrations = matchedIds;
+        
+        // Lấy lại tên để trả về cho frontend
+        const matchedTaxonomies = await ProductTaxonomy.find({ _id: { $in: matchedIds } }).lean();
+        productInfo.concentration = matchedTaxonomies.map(t => t.name).join(', ');
       }
 
       // Convert segment string to segments array of ObjectIds
       if (productInfo.segment && typeof productInfo.segment === 'string') {
         const names = productInfo.segment.split(',').map((s: string) => s.trim()).filter(Boolean);
-        productInfo.segments = await Promise.all(names.map((name: string) => findOrCreateTaxonomy(name, 'segment')));
-        delete productInfo.segment;
+        const matchedIds = await Promise.all(names.map((name: string) => findBestMatchTaxonomy(name, 'segment')));
+        productInfo.segments = matchedIds;
+        
+        // Lấy lại tên để trả về cho frontend
+        const matchedTaxonomies = await ProductTaxonomy.find({ _id: { $in: matchedIds } }).lean();
+        productInfo.segment = matchedTaxonomies.map(t => t.name).join(', ');
       }
 
       const presetImages = [
