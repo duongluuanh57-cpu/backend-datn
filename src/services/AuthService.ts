@@ -25,6 +25,7 @@ export class AuthService {
       email: data.email,
       passwordHash,
       role: 'USER',
+      memberTier: 'MEMBER',
       tenantId // Gán tenantId cho SaaS
     });
 
@@ -58,7 +59,7 @@ export class AuthService {
     // 7. Sinh bộ đôi JWT Token
     const tokens = generateTokens(newUser._id.toString(), newUser.role);
     
-    return { user: { id: newUser._id, username: newUser.username, email: newUser.email, role: newUser.role, tenantId: newUser.tenantId }, tokens };
+    return { user: { id: newUser._id, username: newUser.username, email: newUser.email, role: newUser.role, memberTier: newUser.memberTier, tenantId: newUser.tenantId }, tokens };
   }
 
   static async login(data: LoginInput & { rememberMe?: boolean }, metadata: { ip: string, userAgent: string }) {
@@ -104,7 +105,7 @@ export class AuthService {
     // 6. Sinh bộ đôi Token
     const tokens = generateTokens(user._id.toString(), user.role, data.rememberMe);
     
-    return { user: { id: user._id, username: user.username, email: user.email, role: user.role, tenantId: (user as any).tenantId }, tokens };
+    return { user: { id: user._id, username: user.username, email: user.email, role: user.role, memberTier: (user as any).memberTier || 'MEMBER', tenantId: (user as any).tenantId }, tokens };
   }
 
   /**
