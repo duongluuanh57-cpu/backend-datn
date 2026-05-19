@@ -17,7 +17,7 @@ Hệ thống API được thiết kế theo chuẩn RESTful, tích hợp bảo m
 ---
 
 ## 🧠 2. AI Intelligence (Trí tuệ nhân tạo)
-Sử dụng mô hình **Gemini 3.1 Flash-Lite** và **Gemma 4**.
+Sử dụng mô hình **Gemini 3.1 Flash-Lite** cho toàn bộ hệ thống.
 
 | Endpoint | Method | Mô tả |
 | :--- | :--- | :--- |

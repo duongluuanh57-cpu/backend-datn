@@ -4,6 +4,12 @@ import { SearchService } from '../services/SearchService.ts';
 import { redisService } from '../services/RedisService.ts';
 import { Knowledge } from '../models/Knowledge.ts';
 import { redis } from '../config/redis.ts';
+import { Product } from '../models/Product.ts';
+import { Brand } from '../models/Brand.ts';
+import { Tag } from '../models/Tag.ts';
+import { ScentGroup } from '../models/ScentGroup.ts';
+import { Concentration } from '../models/Concentration.ts';
+import { Segment } from '../models/Segment.ts';
 
 export class AIController {
   /**
@@ -41,7 +47,7 @@ export class AIController {
             const identifyPrompt = "Hãy đọc tên sản phẩm nước hoa và thương hiệu trong ảnh này. Chỉ trả về tên, ví dụ: 'Midnight Rose'.";
             const identifiedProduct = await AIService.identifyProduct(image, identifyPrompt);
             console.log('👁️ [AIController] Vision Result:', identifiedProduct);
-            
+
             if (identifiedProduct && identifiedProduct.trim()) {
               searchQuery = `${lastMessage} ${identifiedProduct.trim()}`;
             }
@@ -64,19 +70,43 @@ export class AIController {
       } else if (products.length === 0) {
         context = "TRẠNG THÁI: Không tìm thấy sản phẩm phù hợp. Xin lỗi lịch sự.\n";
       } else {
-        context = `DANH SÁCH SẢN PHẨM:\n${products.map(p => `- ${p.name} (Hãng: ${p.brand}): [CARD:${p._id}]`).join('\n')}\n`;
+        context = `DANH SÁCH SẢN PHẨM KHỚP NHẤT:\n${products.map(p => `- ${p.name} (Hãng: ${p.brand}): [CARD:${p._id}]`).join('\n')}\n`;
+      }
+
+      let globalInfo = '';
+      try {
+        const [allBrands, allTags, allScents, allConcentrations, allSegments, allProducts] = await Promise.all([
+          Brand.find({ status: 'active' }).select('name').lean(),
+          Tag.find({ status: 'active' }).select('name').lean(),
+          ScentGroup.find().select('name').lean(),
+          Concentration.find().select('name').lean(),
+          Segment.find().select('name').lean(),
+          Product.find({}).select('name brand').lean()
+        ]);
+        globalInfo = `TỔNG QUAN TOÀN BỘ CƠ SỞ DỮ LIỆU CỬA HÀNG (Dùng để trả lời nếu khách hỏi tổng quát):
+- Thương hiệu đang có: ${allBrands.map((b: any) => b.name).join(', ')}
+- Nhãn Tags: ${allTags.map((t: any) => t.name).join(', ')}
+- Nhóm hương: ${allScents.map((s: any) => s.name).join(', ')}
+- Nồng độ: ${allConcentrations.map((c: any) => c.name).join(', ')}
+- Phân khúc: ${allSegments.map((s: any) => s.name).join(', ')}
+- TOÀN BỘ SẢN PHẨM TRONG KHO: ${allProducts.map((p: any) => `${p.name} (${p.brand})`).join(' | ')}`;
+      } catch (dbErr) {
+        console.error('Error fetching global info:', dbErr);
       }
 
       // 3. SYSTEM PROMPT - TƯ VẤN ĐẦY ĐỦ
       const systemPrompt = `
-Bạn là Tinco. Trả lời dưới 30 từ, dùng icon :3 thân thiện.
+Bạn là Tinco - Trợ lý AI bán nước hoa cao cấp. Trả lời ngắn gọn, thân thiện, dùng icon :3.
 QUY TẮC:
 1. Nếu TRẠNG THÁI là "Khách vừa chào": Chỉ chào lại thân thiện, KHÔNG đề xuất sản phẩm, KHÔNG dùng [CARD:id].
-2. Nếu có DANH SÁCH SẢN PHẨM: Luôn nêu rõ Tên sản phẩm và Thương hiệu, BẮT BUỘC chép đúng mã [CARD:id] vào cuối câu.
-3. Nếu không có sản phẩm: Xin lỗi ngắn gọn, đề xuất hỏi cách khác.
+2. Nếu khách hỏi cụ thể và có DANH SÁCH SẢN PHẨM KHỚP NHẤT: Ưu tiên tư vấn các sản phẩm này, BẮT BUỘC chép đúng mã [CARD:id] vào cuối câu.
+3. Nếu khách hỏi tổng quát (ví dụ: shop có hãng nào, có bao nhiêu loại, có nhóm hương gì): Hãy đọc TỔNG QUAN TOÀN BỘ CƠ SỞ DỮ LIỆU CỬA HÀNG để trả lời chính xác, thay vì nói không biết.
+4. KHÔNG bao giờ nhắc đến từ "Database", "Cơ sở dữ liệu", "Hệ thống".
 
-DỮ LIỆU:
+DỮ LIỆU TÌM KIẾM CỤ THỂ:
 ${context}
+
+${globalInfo}
       `;
 
       const response = await AIService.createChatStream(recentMessages, systemPrompt, image);
@@ -157,7 +187,12 @@ ${context}
         metaTitle,
         metaDescription,
         keywords,
-        availableBrands
+        image,
+        availableBrands,
+        availableScentGroups,
+        availableConcentrations,
+        availableSegments,
+        availableGenders
       } = req.body as {
         name: string;
         brand?: string;
@@ -170,7 +205,12 @@ ${context}
         metaTitle?: string;
         metaDescription?: string;
         keywords?: string;
+        image?: string;
         availableBrands?: string[];
+        availableScentGroups?: string[];
+        availableConcentrations?: string[];
+        availableSegments?: string[];
+        availableGenders?: string[];
       };
 
       if (!name) return reply.status(400).send({ error: 'Name is required' });
@@ -187,12 +227,11 @@ ${context}
       if (metaTitle && metaTitle.trim()) preFilled.metaTitle = metaTitle.trim();
       if (metaDescription && metaDescription.trim()) preFilled.metaDescription = metaDescription.trim();
       if (keywords && keywords.trim()) preFilled.keywords = keywords.trim();
+      if (image && image.trim()) preFilled.image = image.trim();
 
-      console.log(`🧠 [AI Workflow Stage 1] Re-engineered details generation with Gemma 4 for: ${name}`);
+      console.log(`🧠 [AI Workflow Stage 1] Re-engineered details generation with Gemini 3.1 Flash Lite for: ${name}`);
 
-      console.log(`🧠 [AI Workflow Stage 1] Re-engineered details generation with Gemma 4 for: ${name}`);
-
-      const gemmaPrompt = `
+      const geminiDraftPrompt = `
 You are an elite luxury perfume market price and catalog generator with deep research skills.
 Generate a comprehensive profile for the perfume named "${name}".
 
@@ -200,25 +239,21 @@ LIST OF AVAILABLE BRANDS EXISTING IN OUR DATABASE:
 ${JSON.stringify(availableBrands || [])}
 
 INSTRUCTIONS:
-1. You MUST generate all perfume details, pricing strategies, capacity sizes, discount ratios, and market explanations from scratch. Ignore any previous inputs.
-2. Select a factually matching brand strictly from the database brand list above. If none of the brands in the list match the perfume, pick the closest luxury brand or default to the most relevant one from the list.
-3. Use the perfume name "${name}" and the chosen brand to research and suggest:
-   - A highly professional fragrance description written poetically in standard Vietnamese, strictly divided into three bold headings:
-     * **Mô tả hương thơm:** (A beautiful description of olfactory notes, mood, and scent path).
-     * **Thông số kỹ thuật & Thuộc tính:** (Details like concentration e.g. EDP/Extrait, group e.g. Woody Spicy, gender, longevity).
-     * **Nguồn gốc & Chế độ bảo hành:** (Details like imported country origin e.g. Pháp/Ý, store warranty e.g. 100% authentic guarantee, exchange policy).
-   - An optimal standard retail Selling Price (Giá bán) in VNĐ for the standard size (e.g., 2,000,000 to 5,500,000 VNĐ).
-   - A list of capacity/size variants and their suggested retail prices in the format "size:price" separated by commas. The AI must dynamically select realistic luxury packaging sizes (e.g. 2ml, 5ml, 10ml for decants/samples, and 30ml, 50ml, 100ml, 150ml, 200ml for standard/large retail sizes) and dynamically calculate appropriate, proportional, rounded retail prices for each.
-   - A suitable promotional Discount Percentage (Chiết khấu) (e.g. 5, 10, 15, 20, 25, 30%).
-   - A classification tag (e.g., New, Sale, Trending, Limited, Standard).
-   - SEO metadata (meta title under 60 chars, meta description under 160 chars in Vietnamese, and 5 keywords).
+1. Ensure the product name is provided (already validated). Generate only the product name and select a matching brand from the database brand list.
+2. Suggest an optimal standard retail Selling Price (Giá bán) in VNĐ for the standard size (e.g., 2,000,000 to 5,500,000 VNĐ).
+3. Provide a highly professional fragrance description written poetically in standard Vietnamese, divided into three bold headings:
+   - **Mô tả hương thơm:**
+   - **Thông số kỹ thuật & Thuộc tính:**
+   - **Nguồn gốc & Chế độ bảo hành:**
+4. Include SEO metadata (meta title under 60 chars, meta description under 160 chars in Vietnamese, and 5 keywords).
+Note: Capacity/size variants and Discount Percentage will be generated in a later step after price confirmation.
 4. For the three suggested numerical fields (Selling Price, Capacity Variants, and Discount Percentage), you MUST research and cite real-world international references and websites (such as Fragrantica, Basenotes, Sephora, Harrods, Selfridges, or official designer/niche house websites like Chanel, Dior, Creed, Le Labo, Tom Ford etc.) and draft extremely rich, highly specific Vietnamese market analysis reports:
    - Price Decision Report (Báo cáo giải thích giá bán): Cover these exact sections with rich, long-form details:
      * **1. Các tiêu chí cốt lõi để AI gợi ý giá:** (Detailed olfactory raw materials rarity, global scent index e.g. Fragrantica score, successful local transaction records).
      * **2. "Nguồn sản phẩm" đóng vai trò gì trong thuật toán:** (Official distribution vs grey market price differences, safe airfreight logistic costs).
      * **3. Tại sao AI phải đưa ra "Lý do gợi ý giá":** (Liquidity/velocity vs premium exclusivity trade-off, competitive advantages).
      * **4. Quyết định & Khuyến nghị mức Markup (15%):** (Markup margin logic tailored to this brand).
-     * **5. Nguồn tham khảo & Đối chiếu của Gemma 4:** (List exact websites, department stores, and catalog indexes consulted for this specific brand/perfume).
+     * **5. Nguồn tham khảo & Đối chiếu của Gemini 3.1 Flash Lite:** (List exact websites, department stores, and catalog indexes consulted for this specific brand/perfume).
    - Capacity Decision Report (Báo cáo giải thích dung tích): Cover 5 detailed sections explaining sizing options, portion pricing logic, decant/sample bottling costs, local customer sizing behaviors in Vietnam, and the specific references consulted.
    - Discount Decision Report (Báo cáo giải thích chiết khấu): Cover 5 detailed sections explaining the suggested discount percentage, competitor promo levels, seasonal factors, retail margins optimization, and the specific references consulted.
 
@@ -229,66 +264,90 @@ LANGUAGE REQUIREMENT:
 Respond with a raw draft containing all these details and reports.
 `;
 
-      let gemmaOutput = '';
+      let geminiDraftOutput = '';
       try {
-        gemmaOutput = await AIService.generateResponse(gemmaPrompt, undefined, 'gemma-4-31b-it');
-        console.log(`🧠 [AI Workflow Stage 1] Gemma 4 31B Draft Completed successfully.`);
-      } catch (gemmaError: any) {
-        console.warn(`⚠️ [AI Fallback] Gemma 4 31B is currently experiencing transient Google API issues (${gemmaError.message}). Falling back to Gemma 4 26B...`);
+        geminiDraftOutput = await AIService.generateResponse(geminiDraftPrompt, undefined, 'gemini-3.1-flash-lite');
+        console.log(`🧠 [AI Workflow Stage 1] Gemini 3.1 Flash Lite Draft Completed successfully.`);
+      } catch (geminiError: any) {
+        console.warn(`⚠️ [AI Fallback] Gemini 3.1 Flash Lite is currently experiencing transient Google API issues (${geminiError.message}). Retrying...`);
         try {
-          gemmaOutput = await AIService.generateResponse(gemmaPrompt, undefined, 'gemma-4-26b-it');
-          console.log(`🧠 [AI Workflow Stage 1 Fallback] Gemma 4 26B Draft Completed successfully.`);
-        } catch (gemma26Error: any) {
-          console.warn(`⚠️ [AI Fallback 2] Gemma 4 26B also failed (${gemma26Error.message}). Falling back to Gemini 3.1 Flash Lite for Stage 1...`);
-          gemmaOutput = await AIService.generateResponse(gemmaPrompt, undefined, 'gemini-3.1-flash-lite');
-          console.log(`🧠 [AI Workflow Stage 1 Final Fallback] Gemini 3.1 Draft Completed successfully.`);
+          geminiDraftOutput = await AIService.generateResponse(geminiDraftPrompt, undefined, 'gemini-3.1-flash-lite');
+          console.log(`🧠 [AI Workflow Stage 1 Fallback] Gemini 3.1 Draft Completed successfully on retry.`);
+        } catch (retryError: any) {
+          console.error(`❌ [AI Error] Gemini 3.1 Flash Lite failed all attempts for Stage 1:`, retryError.message);
+          throw retryError;
         }
       }
 
       console.log(`✨ [AI Workflow Stage 2] Refining and Auditing with Gemini 3.1 Flash Lite...`);
+      console.log(`🔍 [AIController Stage 2 Pre-Check] Variables check:`, {
+        geminiDraftOutput_type: typeof geminiDraftOutput,
+        geminiDraftOutput_val: String(geminiDraftOutput).substring(0, 100),
+        availableBrands_type: typeof availableBrands,
+        availableBrands_val: availableBrands
+      });
+      
+      // Validate geminiDraftOutput
+      if (!geminiDraftOutput || typeof geminiDraftOutput !== 'string') {
+        throw new Error(`Invalid geminiDraftOutput: ${typeof geminiDraftOutput}`);
+      }
+      
+      const brandsJson = JSON.stringify(availableBrands || []);
       const geminiPrompt = `
 You are an elite luxury perfume editor and JSON formatter.
-You are given the following draft profile of a perfume and market analysis reports generated by another AI (Gemma 4):
+You are given the following draft profile of a perfume and market analysis reports generated in the previous stage:
 
---- DRAFT PROFILE & REPORTS FROM GEMMA 4 ---
-${gemmaOutput}
+--- DRAFT PROFILE & REPORTS FROM GEMINI 3.1 FLASH LITE ---
+${geminiDraftOutput}
 ---------------------------------------------
 
 YOUR STRICT ASSIGNMENT:
-1. Fact-check the draft: Ensure the selected brand strictly belongs to the database brands list: ${JSON.stringify(availableBrands || [])}. Do NOT output any brand name outside this list under any circumstances!
+1. Fact-check the draft: Ensure the selected brand strictly belongs to the database brands list: ${brandsJson}. Do NOT output any brand name outside this list under any circumstances!
+CRITICAL TAXONOMY RULES: To prevent database bloat, you MUST strongly prioritize selecting exact string matches from the provided lists below. ONLY IF there is absolutely no fitting category in the list, you may suggest a short, highly accurate new category string (except for gender).
+- scentGroup: Prioritize exactly one of ${JSON.stringify(availableScentGroups || [])}. Suggest a new one ONLY if no match exists.
+- concentration: Prioritize exactly one of ${JSON.stringify(availableConcentrations || [])}. Suggest a new one ONLY if no match exists.
+- segment: Prioritize exactly one of ${JSON.stringify(availableSegments || [])}. Suggest a new one ONLY if no match exists.
+- gender: MUST be exactly one of ${JSON.stringify(availableGenders || [])}. Do NOT invent new genders.
+
 2. Scent Description: Ensure the "description" field is beautifully refined in Vietnamese and contains these three exact bold sections:
    - **Mô tả hương thơm:**
    - **Thông số kỹ thuật & Thuộc tính:**
    - **Nguồn gốc & Chế độ bảo hành:**
+
 3. Pricing & Sizes:
    - Round suggested prices to the nearest 10,000 VNĐ.
-   - Read the draft capacity variants and their prices proposed by Gemma 4. You MUST preserve the exact sizes (such as 2ml, 5ml, 10ml, 50ml, 100ml, etc. as analyzed and explained in Gemma 4's draft and sizeReport) and their calculated prices. Format the "size" field strictly as a comma-separated list of "size:price" (e.g., "2ml:90000, 5ml:220000, 10ml:420000, 100ml:2900000"). Do NOT hardcode or default to other sizes.
-4. Explanatory Reports:
-   - You MUST ensure the reports are extremely detailed, highly informative, rich in market data, and unique to the brand and perfume. They MUST NOT be generic or boilerplate.
-   - Format the "priceReport" field as a highly professional markdown text in Vietnamese, covering exactly these 5 headings:
-     * **1. Các tiêu chí cốt lõi để AI gợi ý giá:**
-     * **2. "Nguồn sản phẩm" đóng vai trò gì trong thuật toán:**
-     * **3. Tại sao AI phải đưa ra "Lý do gợi ý giá":**
-     * **4. Quyết định & Khuyến nghị mức Markup (15%):**
-     * **5. Nguồn tham khảo & Đối chiếu của Gemma 4:** (Must list specific authoritative sites like fragrantica.com, basenotes.com, sephora.com, harrods.com, the brand's official site, etc. that were used to retrieve information for this specific perfume).
-   - Format the "sizeReport" field as a detailed markdown text in Vietnamese, explaining sizing options and decant pricing strategy, covering exactly these 5 headings:
-     * **1. Cơ cấu dung tích tối ưu cho dòng hương:**
-     * **2. Chiến lược định giá phân phối mẫu chiết:**
-     * **3. Tại sao AI phải đề xuất dải size đa dạng:**
-     * **4. Khuyến nghị cấu trúc phân bổ dung tích:**
-     * **5. Nguồn tham khảo & Đối chiếu của Gemma 4:**
-   - Format the "discountReport" field as a detailed markdown text in Vietnamese, explaining discount rate selection and margin impact, covering exactly these 5 headings:
-     * **1. Mục tiêu chiến dịch chiết khấu của dòng hương:**
-     * **2. Tác động của chiết khấu đến biên lợi nhuận:**
-     * **3. Tại sao AI đề xuất mức chiết khấu này:**
-     * **4. Khuyến nghị lập lịch chiết khấu sự kiện:**
-     * **5. Nguồn tham khảo & Đối chiếu của Gemma 4:**
+   - Read the draft capacity variants and their prices proposed in the draft. You MUST preserve the exact sizes (such as 2ml, 5ml, 10ml, 50ml, 100ml, etc. as analyzed and explained in the draft and sizeReport) and their calculated prices. Format the "size" field strictly as a comma-separated list of "size:price" (e.g., "2ml:90000, 5ml:220000, 10ml:420000, 100ml:2900000"). Do NOT hardcode or default to other sizes.
+
+4. Detailed Analysis Reports (CRITICAL - MUST BE COMPREHENSIVE):
+   
+   **priceReport** - Phân tích chi tiết về giá sản phẩm (tiếng Việt, 300-500 từ):
+   - **1. Các tiêu chí cốt lõi để AI gợi ý giá:** Giải thích cách AI phân tích thương hiệu, độ hiếm, nồng độ hương, nguồn gốc nguyên liệu để đưa ra mức giá phù hợp
+   - **2. "Nguồn sản phẩm" đóng vai trò gì trong thuật toán:** Phân tích sự khác biệt giữa hàng chính hãng, parallel import, tester về giá và chất lượng
+   - **3. So sánh giá với các sản phẩm tương tự:** So sánh với 2-3 sản phẩm cùng phân khúc, giải thích tại sao giá này hợp lý
+   - **4. Dự đoán xu hướng giá:** Phân tích khả năng tăng/giảm giá trong 6-12 tháng tới dựa trên thị trường
+   
+   **sizeReport** - Phân tích chi tiết về dung tích (tiếng Việt, 300-500 từ):
+   - **1. Tại sao có nhiều dung tích khác nhau:** Giải thích chiến lược phân khúc khách hàng (thử nghiệm, sử dụng hàng ngày, sưu tầm)
+   - **2. Phân tích giá trị từng dung tích:** So sánh giá/ml của từng size, tư vấn size nào cost-effective nhất
+   - **3. Xu hướng tiêu dùng theo dung tích:** Phân tích size nào phổ biến nhất ở thị trường Việt Nam và tại sao
+   - **4. Khuyến nghị cho từng đối tượng:** Tư vấn size phù hợp cho người mới dùng, người sưu tầm, người dùng thường xuyên
+   
+   **discountReport** - Phân tích chi tiết về chiết khấu (tiếng Việt, 300-500 từ):
+   - **1. Cơ sở đưa ra mức chiết khấu:** Giải thích tại sao sản phẩm này được giảm giá X% (mùa vụ, thanh lý, khuyến mãi đặc biệt)
+   - **2. So sánh với các đợt sale trước:** Phân tích lịch sử giảm giá của thương hiệu/dòng sản phẩm này
+   - **3. Đánh giá mức độ hấp dẫn:** So sánh với mức giảm giá trung bình của thị trường (10-15% là bình thường, >20% là tốt)
+   - **4. Thời điểm tốt nhất để mua:** Tư vấn nên mua ngay hay chờ đợt sale lớn hơn (Black Friday, Tết, v.v.)
+
 5. Output STRICTLY a valid JSON object conforming to the schema below. Do NOT include markdown code block syntax (like \`\`\`json). Just the raw JSON object.
 
 JSON Schema:
 {
   "brand": "Factually correct brand name strictly selected from the database brand list",
   "tag": "one of: 'New', 'Sale', 'Trending', 'Limited', 'Standard'",
+  "scentGroup": "Strictly selected from the database scent groups list",
+  "concentration": "Strictly selected from the database concentrations list",
+  "segment": "Strictly selected from the database segments list",
+  "gender": "Strictly selected from the gender list",
   "description": "Poetic fragrance description with three bold sections in Vietnamese",
   "price": number (rounded to nearest 10,000 VNĐ),
   "size": "comma-separated list of capacity:price variants as analyzed in the sizeReport (e.g. '2ml:100000, 5ml:220000, 10ml:420000, 100ml:2900000')",
@@ -301,25 +360,34 @@ JSON Schema:
   "keywords": ["keyword 1", "keyword 2", "keyword 3"]
 }
 `;
+      console.log(`🔍 [AIController DEBUG] About to call generateResponse with geminiPrompt:`, {
+        type: typeof geminiPrompt,
+        isNull: geminiPrompt === null,
+        isUndefined: geminiPrompt === undefined,
+        isNaN: typeof geminiPrompt === 'number' && isNaN(geminiPrompt),
+        valueStr: String(geminiPrompt).substring(0, 100),
+        length: typeof geminiPrompt === 'string' ? geminiPrompt.length : 'N/A'
+      });
 
       const response = await AIService.generateResponse(geminiPrompt, undefined, 'gemini-3.1-flash-lite');
       let jsonString = response.trim();
-      
+
       if (jsonString.startsWith('```')) {
         jsonString = jsonString.replace(/^```json\s*/i, '').replace(/```$/, '');
       }
 
       const productInfo = JSON.parse(jsonString.trim());
-      
+
       const presetImages = [
-        'https://i.ibb.co/C3Y4Vv7Y/perfume2.webp',
-        'https://i.ibb.co/p6Zz9zGZ/perfume3.webp',
-        'https://i.ibb.co/hR4X5X1X/perfume4.webp',
-        'https://i.ibb.co/v6W7V6mF/perfume5.webp'
+        'https://i.ibb.co/LhJhpsKs/Midnight-Rose-copy.webp',
+        'https://i.ibb.co/6cQSVbRX/Simple-Product-Golden-Amber.webp',
+        'https://i.ibb.co/gH9dMN4/26689197.webp',
+        'https://i.ibb.co/4wB9f8mn/Royal-Blue-Musk-scaled.webp'
       ];
+      // Keep preFilled.image if user has already uploaded one, otherwise pick a preset or allow empty/generation!
       productInfo.image = preFilled.image || presetImages[Math.floor(Math.random() * presetImages.length)];
 
-      console.log(`✨ [AI Workflow Stage 2] Gemini 3.1 Audit & Formatting Completed!`);
+      console.log(`%c✨ [AI Workflow Stage 2] Gemini 3.1 Audit & Formatting Completed!`, 'color: green');
       return reply.status(200).send({ success: true, data: productInfo });
     } catch (error: any) {
       console.error('AI Product Generation Error:', error);
@@ -332,77 +400,51 @@ JSON Schema:
       const { name } = req.body as { name: string };
       if (!name) return reply.status(400).send({ error: 'Name is required' });
 
-      console.log(`🧠 [AI Workflow Stage 1] Generating raw details with Gemma 4 for Brand: ${name}`);
-      const gemmaPrompt = `
-You are a luxury brand archivist.
-Write a detailed historical record and identity of the luxury fragrance brand named "${name}".
-
-LANGUAGE REQUIREMENT:
-- You MUST write and describe strictly in pure, standard Vietnamese (tiếng Việt).
-- Absolutely NO Chinese characters (Hán tự) or mixed-language text are allowed.
-
-Include:
-- True country of origin of the brand (e.g., Chanel -> France, Gucci -> Italy, Tom Ford -> US, Jo Malone -> UK).
-- Its brand heritage, olfactory philosophy, and motto in Vietnamese.
-`;
-
-      let gemmaOutput = '';
-      try {
-        gemmaOutput = await AIService.generateResponse(gemmaPrompt, undefined, 'gemma-4-31b-it');
-        console.log(`🧠 [AI Workflow Stage 1] Gemma 4 31B Brand Draft Completed.`);
-      } catch (gemmaError: any) {
-        console.warn(`⚠️ [AI Fallback] Gemma 4 31B is currently experiencing transient Google API issues (${gemmaError.message}). Falling back to Gemma 4 26B...`);
-        try {
-          gemmaOutput = await AIService.generateResponse(gemmaPrompt, undefined, 'gemma-4-26b-it');
-          console.log(`🧠 [AI Workflow Stage 1 Fallback] Gemma 4 26B Brand Draft Completed.`);
-        } catch (gemma26Error: any) {
-          console.warn(`⚠️ [AI Fallback 2] Gemma 4 26B also failed (${gemma26Error.message}). Falling back to Gemini 3.1 Flash Lite for Stage 1...`);
-          gemmaOutput = await AIService.generateResponse(gemmaPrompt, undefined, 'gemini-3.1-flash-lite');
-          console.log(`🧠 [AI Workflow Stage 1 Final Fallback] Gemini 3.1 Flash Lite Brand Draft Completed.`);
-        }
-      }
-
-      console.log(`✨ [AI Workflow Stage 2] Refining and Auditing with Gemini 3.1 Flash Lite...`);
+      console.log(`🧠 [AI Workflow] Generating brand/tag details directly with Gemini 3.1 Flash Lite for: ${name}`);
       const geminiPrompt = `
-You are an elite luxury brand editor and JSON formatter.
-You are given the following draft record of a brand generated by another AI (Gemma 4):
-
---- DRAFT RECORD FROM GEMMA 4 ---
-${gemmaOutput}
----------------------------------
+You are an elite luxury brand and taxonomy editor.
+Write a detailed historical record, description, and country of origin of the luxury fragrance brand or taxonomy group named "${name}".
 
 Your tasks:
-1. Fact-check the draft: Ensure the country of origin is 100% accurate (e.g., Chanel -> "Pháp", Gucci -> "Ý", Jo Malone -> "Vương quốc Anh"). Correct it if wrong.
-2. Refine the Vietnamese brand motto/story: Make it incredibly elegant, high-end, smooth, and professional in Vietnamese. 2-3 sentences.
-3. Language Control: Output strictly in 100% pure, standard Vietnamese. Absolutely NO Chinese characters (Hán tự), Sino-Chinese terms, or mixed languages.
-4. Output STRICTLY a valid JSON object conforming to the schema below.
-5. Do NOT include markdown code block syntax (like \`\`\`json). Just the raw JSON object.
+1. True Country of Origin: Suggest the factually correct country of origin (e.g., Chanel -> "Pháp", Gucci -> "Ý", Jo Malone -> "Vương quốc Anh", Tom Ford -> "Mỹ").
+2. Exquisite Story/Description: Write a highly elegant, high-end, smooth, and professional brand story or classification description in Vietnamese. 2-3 sentences.
+3. Target Gender: Suggest the correct target gender for the brand's primary catalogs (e.g., "Nam, Nữ, Unisex", "Unisex", "Nam", "Nữ").
+4. Signature Scent Groups: List signature perfume scent groups of the brand in Vietnamese (e.g., "Hương hoa cỏ Phương Đông (Floral Oriental)", "Hương Gỗ cay nồng", "Chypre").
+5. Common Concentrations: List common perfume concentrations the brand produces (e.g., "EDP, EDT, Cologne, Parfum").
+6. Brand Classification Group: Factually correct segment of the brand (e.g., "Niche", "Designer", "Indie").
+7. Language Control: Output strictly in 100% pure, standard Vietnamese (tiếng Việt). Absolutely NO Chinese characters (Hán tự), Sino-Chinese terms, or mixed languages.
+8. Output STRICTLY a valid JSON object conforming to the schema below.
+9. Do NOT include markdown code block syntax (like \`\`\`json). Just the raw JSON object.
 
 JSON Schema:
 {
   "origin": "Factually correct country of origin in Vietnamese",
-  "description": "Exquisite, poetic brand story in Vietnamese. 2-3 sentences."
+  "description": "Exquisite, poetic story or taxonomy description in Vietnamese. 2-3 sentences.",
+  "gender": "Giới tính phù hợp cho thương hiệu (e.g., Nam, Nữ, Unisex)",
+  "scentGroup": "Nhóm hương đặc trưng nổi tiếng nhất của hãng",
+  "concentration": "Nồng độ nước hoa chủ đạo (e.g., EDP, EDT, Parfum)",
+  "group": "Phân loại phân khúc thương hiệu (e.g., Niche, Designer, Classic)"
 }
 `;
 
       const response = await AIService.generateResponse(geminiPrompt, undefined, 'gemini-3.1-flash-lite');
       let jsonString = response.trim();
-      
+
       if (jsonString.startsWith('```')) {
         jsonString = jsonString.replace(/^```json\s*/i, '').replace(/```$/, '');
       }
 
       const brandInfo = JSON.parse(jsonString.trim());
-      
+
       // Limit brand fields exactly as requested
       brandInfo.logo = '';
       brandInfo.status = 'active';
       brandInfo.featured = false;
 
-      console.log(`✨ [AI Workflow Stage 2] Gemini 3.1 Brand Audit & Formatting Completed!`);
+      console.log(`✨ [AI Workflow] Gemini 3.1 Brand/Tag Generation Completed!`);
       return reply.status(200).send({ success: true, data: brandInfo });
     } catch (error: any) {
-      console.error('AI Brand Generation Error:', error);
+      console.error('AI Brand/Tag Generation Error:', error);
       return reply.status(500).send({ success: false, message: error.message });
     }
   }
@@ -479,7 +521,7 @@ Return exactly 3 lines, one suggestion per line. No markdown, no numbers.
 
       // Generate response from Gemini (extremely fast now, as it only generates 3 plain text lines)
       const response = await AIService.generateResponse(systemPrompt, undefined, 'gemini-3.1-flash-lite');
-      
+
       // Clean up response line-by-line using a regex that handles list marks, bullets, quotes, and brackets
       const suggestions = response.split('\n')
         .map(s => s.replace(/^[-\d.\s"'`*•\[\]]+/, '').replace(/["'`*\]\[]+$/, '').trim())
@@ -529,9 +571,9 @@ Return exactly 3 lines, one suggestion per line. No markdown, no numbers.
         console.warn('Redis read failed for price suggestion', redisErr);
       }
 
-      console.log(`🧠 [AI Price Suggestion Stage 1] Context-Aware price drafting with Gemma 4 for: ${name}`);
+      console.log(`🧠 [AI Price Suggestion Stage 1] Context-Aware price drafting with Gemini 3.1 Flash Lite for: ${name}`);
 
-      const gemmaPrompt = `
+      const geminiDraftPrompt = `
 You are a luxury perfume market price expert in Vietnam.
 Analyze the perfume: "${name}" ${brand ? `by brand "${brand}"` : ''} ${size ? `for capacity/size "${size}"` : ''}.
 The base price of the standard 100ml size of this perfume is ${basePrice ? `${basePrice} VNĐ` : 'unknown'}.
@@ -555,29 +597,28 @@ INSTRUCTIONS:
 Respond with a raw draft containing all these numbers and a detailed market report draft in Vietnamese.
 `;
 
-      let gemmaOutput = '';
+      let geminiDraftOutput = '';
       try {
-        gemmaOutput = await AIService.generateResponse(gemmaPrompt, undefined, 'gemma-4-31b-it');
-        console.log(`🧠 [AI Price Suggestion Stage 1] Gemma 4 31B Draft Completed successfully.`);
-      } catch (gemmaError: any) {
-        console.warn(`⚠️ [AI Fallback] Gemma 4 31B is currently experiencing transient Google API issues (${gemmaError.message}). Falling back to Gemma 4 26B...`);
+        geminiDraftOutput = await AIService.generateResponse(geminiDraftPrompt, undefined, 'gemini-3.1-flash-lite');
+        console.log(`🧠 [AI Price Suggestion Stage 1] Gemini 3.1 Draft Completed successfully.`);
+      } catch (geminiError: any) {
+        console.warn(`⚠️ [AI Fallback] Gemini 3.1 Flash Lite is currently experiencing transient Google API issues (${geminiError.message}). Retrying...`);
         try {
-          gemmaOutput = await AIService.generateResponse(gemmaPrompt, undefined, 'gemma-4-26b-it');
-          console.log(`🧠 [AI Price Suggestion Stage 1 Fallback] Gemma 4 26B Draft Completed successfully.`);
-        } catch (gemma26Error: any) {
-          console.warn(`⚠️ [AI Fallback 2] Gemma 4 26B also failed (${gemma26Error.message}). Falling back to Gemini 3.1 Flash Lite...`);
-          gemmaOutput = await AIService.generateResponse(gemmaPrompt, undefined, 'gemini-3.1-flash-lite');
-          console.log(`🧠 [AI Price Suggestion Stage 1 Final Fallback] Gemini 3.1 Draft Completed successfully.`);
+          geminiDraftOutput = await AIService.generateResponse(geminiDraftPrompt, undefined, 'gemini-3.1-flash-lite');
+          console.log(`🧠 [AI Price Suggestion Stage 1 Fallback] Gemini 3.1 Draft Completed successfully on retry.`);
+        } catch (retryError: any) {
+          console.error(`❌ [AI Error] Gemini 3.1 Flash Lite failed all attempts for Stage 1:`, retryError.message);
+          throw retryError;
         }
       }
 
       console.log(`✨ [AI Price Suggestion Stage 2] Math Auditing & Refining with Gemini 3.1 Flash Lite...`);
       const geminiPrompt = `
 You are an elite luxury perfume price analyst and JSON formatter.
-You are given a draft market price report generated by another AI (Gemma 4):
+You are given a draft market price report generated in the previous stage:
 
---- DRAFT MARKET REPORT FROM GEMMA 4 ---
-${gemmaOutput}
+--- DRAFT MARKET REPORT FROM GEMINI 3.1 FLASH LITE ---
+${geminiDraftOutput}
 ----------------------------------------
 
 YOUR STRICT ASSIGNMENT:
@@ -625,7 +666,7 @@ YOUR STRICT ASSIGNMENT:
 
       try {
         const result = JSON.parse(cleaned.trim());
-        
+
         // Save to Redis cache for 7 days
         try {
           await redis.set(cacheKey, JSON.stringify(result), 'EX', 604800);
@@ -636,12 +677,12 @@ YOUR STRICT ASSIGNMENT:
         return reply.status(200).send({ success: true, data: result });
       } catch (pErr) {
         console.warn('JSON Parse failed for price suggestion:', cleaned);
-        
+
         // Fallback calculation in case JSON is malformed
         const fallbackMarketPrice = 3000000;
         const fallbackMarkupAmount = fallbackMarketPrice * (markupPercentage / 100);
         const fallbackSuggestedPrice = fallbackMarketPrice + fallbackMarkupAmount;
-        
+
         const fallback = {
           marketPrice: fallbackMarketPrice,
           markupPercentage: markupPercentage,

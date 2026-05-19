@@ -9,6 +9,10 @@ export interface IProduct extends Document {
   image: string;
   description: string;
   tag?: string;
+  scentGroup?: string;
+  concentration?: string;
+  segment?: string;
+  gender?: string;
   rating?: number;
   reviewsCount?: number;
   size?: string;
@@ -37,6 +41,10 @@ const ProductSchema = new Schema<IProduct>(
     image: { type: String, required: true },
     description: { type: String },
     tag: { type: String },
+    scentGroup: { type: String },
+    concentration: { type: String },
+    segment: { type: String },
+    gender: { type: String },
     rating: { type: Number, default: 5 },
     reviewsCount: { type: Number, default: 0 },
     size: { type: String },
@@ -48,7 +56,7 @@ const ProductSchema = new Schema<IProduct>(
     metaDescription: { type: String },
     keywords: [{ type: String }],
     soldCount: { type: Number, default: 0 },
-    embedding: { type: [Number], index: '2dsphere' }, // Định dạng mảng số thực
+    embedding: { type: [Number] }, // Định dạng mảng số thực
     tenantId: { type: String, required: true, index: true },
     priceReport: { type: String },
     sizeReport: { type: String },
@@ -64,12 +72,12 @@ const ProductSchema = new Schema<IProduct>(
  * TỰ ĐỘNG NẠP KIẾN THỨC (Auto-Ingestion)
  * Mỗi khi lưu sản phẩm, tự động tạo Vector Embedding để AI thấu hiểu sản phẩm
  */
-ProductSchema.pre('save', async function(next) {
+ProductSchema.pre('save', async function() {
   // Chỉ chạy nếu các trường quan trọng thay đổi
-  if (this.isModified('name') || this.isModified('brand') || this.isModified('description')) {
+  if (this.isModified('name') || this.isModified('brand') || this.isModified('description') || this.isModified('gender') || this.isModified('scentGroup') || this.isModified('concentration') || this.isModified('segment')) {
     try {
       console.log(`🧠 [AI Auto-Train] Đang nạp kiến thức cho sản phẩm: ${this.name}`);
-      const textToEmbed = `${this.name} ${this.brand} ${this.description} ${this.keywords?.join(' ')}`;
+      const textToEmbed = `${this.name} ${this.brand} ${this.description} ${this.keywords?.join(' ')} ${this.gender || ''} ${this.scentGroup || ''} ${this.concentration || ''} ${this.segment || ''}`;
       
       // Gọi AI Service để lấy "vân tay ý nghĩa"
       const vector = await AIService.generateEmbedding(textToEmbed);
@@ -78,7 +86,6 @@ ProductSchema.pre('save', async function(next) {
       console.error('⚠️ [AI Auto-Train Error] Không thể tạo embedding:', err);
     }
   }
-  next();
 });
 
 ProductSchema.plugin(multiTenancyPlugin);

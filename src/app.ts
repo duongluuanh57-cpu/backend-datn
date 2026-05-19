@@ -18,6 +18,10 @@ import { productRoutes } from './routes/product.routes.ts';
 import { userRoutes } from './routes/user.routes.ts';
 import { statsRoutes } from './routes/stats.routes.ts';
 import { brandRoutes } from './routes/brand.routes.ts';
+import { tagRoutes } from './routes/tag.routes.ts';
+import { scentGroupRoutes } from './routes/scent-group.routes.ts';
+import { concentrationRoutes } from './routes/concentration.routes.ts';
+import { segmentRoutes } from './routes/segment.routes.ts';
 import rawBody from 'fastify-raw-body';
 import corePlugin from './plugins/core.ts';
 import { errorHandler } from './middleware/errorHandler.ts';
@@ -93,6 +97,10 @@ export function buildApp(): FastifyInstance {
   app.register(userRoutes, { prefix: '/api/users' });
   app.register(statsRoutes, { prefix: '/api/stats' });
   app.register(brandRoutes, { prefix: '/api/brands' });
+  app.register(tagRoutes, { prefix: '/api/tags' });
+  app.register(scentGroupRoutes, { prefix: '/api/scent-groups' });
+  app.register(concentrationRoutes, { prefix: '/api/concentrations' });
+  app.register(segmentRoutes, { prefix: '/api/segments' });
 
   // Global Error Handler
   app.setErrorHandler(errorHandler);

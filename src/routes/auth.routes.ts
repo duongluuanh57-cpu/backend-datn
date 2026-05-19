@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { AuthController } from '../controllers/AuthController.ts';
-import { RegisterSchema, LoginSchema } from '../types/user.types.ts';
+import { authMiddleware } from '../middleware/authMiddleware.ts';
+import { RegisterSchema, LoginSchema, ChangePasswordSchema } from '../types/user.types.ts';
 
 export async function authRoutes(app: FastifyInstance) {
   const typedApp = app.withTypeProvider<ZodTypeProvider>();
@@ -40,4 +41,12 @@ export async function authRoutes(app: FastifyInstance) {
       body: z.object({ refreshToken: z.string().min(1) })
     }
   }, AuthController.logout);
+
+  // Đổi mật khẩu cho user đang đăng nhập
+  typedApp.post('/change-password', {
+    preHandler: authMiddleware,
+    schema: {
+      body: ChangePasswordSchema
+    }
+  }, AuthController.changePassword);
 }

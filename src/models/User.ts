@@ -6,7 +6,7 @@ export interface IUser extends Document {
   username: string;
   email: string;
   passwordHash: string;
-  role: 'USER' | 'ADMIN';
+  role: 'USER' | 'ADMIN' | 'SUBADMIN';
   tenantId: string; // Thêm vào interface
   twoFactorSecret?: string;
   twoFactorEnabled: boolean;
@@ -23,7 +23,7 @@ const UserSchema = new Schema<IUser>(
     username: { type: String, required: true, unique: true, index: true },
     email: { type: String, required: true, unique: true, index: true },
     passwordHash: { type: String },          // Optional với OAuth users (không có mật khẩu)
-    role: { type: String, enum: ['USER', 'ADMIN'], default: 'USER' },
+    role: { type: String, enum: ['USER', 'ADMIN', 'SUBADMIN'], default: 'USER' },
     tenantId: { type: String, required: true, index: true }, // Đã bổ sung
     twoFactorSecret: { type: String },
     twoFactorEnabled: { type: Boolean, default: false },

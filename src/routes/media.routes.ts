@@ -21,4 +21,17 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
     MediaController.uploadImgbb
   );
+
+  app.post(
+    '/upload-url',
+    {
+      config: {
+        rateLimit: {
+          max: 20,
+          timeWindow: '1 minute'
+        }
+      }
+    },
+    MediaController.uploadUrl
+  );
 }

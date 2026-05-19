@@ -1,7 +1,7 @@
 async function testChat() {
   console.log('--- Testing AI Chat Stream ---');
   try {
-    const response = await fetch('https://elite-saas-backend.onrender.com/api/ai/chat', {
+    const response = await fetch('https://backend-datn-y78s.onrender.com/api/ai/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

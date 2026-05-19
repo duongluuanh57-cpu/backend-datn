@@ -1,6 +1,32 @@
 import sharp from 'sharp';
 import path from 'path';
 import fs from 'fs/promises';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+
+let s3Client: S3Client | null = null;
+
+function getS3Client(): S3Client {
+  if (s3Client) return s3Client;
+
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+
+  if (!accountId || !accessKeyId || !secretAccessKey) {
+    throw new Error('Chưa cấu hình đầy đủ CLOUDFLARE_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY trong môi trường.');
+  }
+
+  s3Client = new S3Client({
+    region: 'auto',
+    endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId,
+      secretAccessKey,
+    },
+  });
+
+  return s3Client;
+}
 
 export interface ImgBBUploadResult {
   url: string;
@@ -21,7 +47,7 @@ export class ImageService {
   static async optimizeForWeb(
     inputBuffer: Buffer,
     maxWidth: number = 1920,
-    quality: number = 80
+    quality: number = 90
   ): Promise<Buffer> {
     try {
       return await sharp(inputBuffer)
@@ -68,81 +94,101 @@ export class ImageService {
   }
 
   /**
-   * Giả lập Upload lên Cloudflare R2 (Placeholder)
+   * Nén ảnh bằng Sharp (WebP) rồi tải lên Cloudflare R2 S3-compatible.
    */
-  static async uploadToR2(buffer: Buffer, fileName: string): Promise<string> {
-    // Trong thực tế, sẽ sử dụng AWS SDK (S3 Compatible) để upload lên R2
-    // Ở đây chúng ta tạm thời lưu vào folder 'uploads' để minh họa
-    const uploadDir = path.join(process.cwd(), 'uploads');
-    
+  static async compressAndUpload(
+    inputBuffer: Buffer,
+    options?: { maxWidth?: number; quality?: number; name?: string }
+  ): Promise<ImgBBUploadResult> {
+    const bucketName = process.env.R2_BUCKET_NAME || 'lessence-media';
+    const publicDomain = process.env.R2_PUBLIC_DOMAIN;
+    if (!publicDomain?.trim()) {
+      throw new Error('Chưa cấu hình R2_PUBLIC_DOMAIN trong môi trường.');
+    }
+
+    const maxWidth = options?.maxWidth ?? 1920;
+    const quality = options?.quality ?? 90;
+    const originalBytes = inputBuffer.length;
+
+    const compressed = await ImageService.optimizeForWeb(inputBuffer, maxWidth, quality);
+    const baseName = (options?.name || 'upload')
+      .replace(/\.[^/.]+$/, '')
+      .replace(/[^a-zA-Z0-9]/g, '-')
+      .toLowerCase() || 'upload';
+    const hash = Math.random().toString(36).substring(2, 10);
+    const fileName = `uploads/${hash}-${baseName}.webp`;
+
     try {
-      await fs.mkdir(uploadDir, { recursive: true });
-      const finalPath = path.join(uploadDir, fileName);
-      await fs.writeFile(finalPath, buffer);
-      
-      return `https://cdn.example.com/uploads/${fileName}`; // URL giả lập
+      const client = getS3Client();
+      await client.send(
+        new PutObjectCommand({
+          Bucket: bucketName,
+          Key: fileName,
+          Body: compressed,
+          ContentType: 'image/webp',
+          CacheControl: 'public, max-age=31536000, immutable',
+        })
+      );
+
+      const finalUrl = `${publicDomain.replace(/\/$/, '')}/${fileName}`;
+
+      return {
+        url: finalUrl,
+        displayUrl: finalUrl,
+        thumbUrl: finalUrl,
+        originalBytes,
+        compressedBytes: compressed.length
+      };
     } catch (error) {
-      console.error('[ImageService Upload Error]', error);
-      throw new Error('Lỗi khi lưu trữ hình ảnh.');
+      console.error('[ImageService R2 Upload Error]', error);
+      throw new Error(error instanceof Error ? error.message : 'Lỗi khi lưu trữ hình ảnh lên Cloudflare R2.');
     }
   }
 
   /**
-   * Nén ảnh bằng Sharp (WebP) rồi tải lên ImgBB.
-   * Cần biến môi trường IMGBB_API_KEY (lấy tại https://api.imgbb.com/).
+   * Xóa ảnh khỏi Cloudflare R2 dựa trên URL công khai
    */
-  static async compressAndUploadToImgBB(
-    inputBuffer: Buffer,
-    options?: { maxWidth?: number; quality?: number; name?: string }
-  ): Promise<ImgBBUploadResult> {
-    const apiKey = process.env.IMGBB_API_KEY;
-    if (!apiKey?.trim()) {
-      throw new Error('Chưa cấu hình IMGBB_API_KEY trong môi trường.');
+  static async deleteFromR2(url: string): Promise<boolean> {
+    if (!url || typeof url !== 'string' || !url.trim()) return false;
+    
+    const publicDomain = process.env.R2_PUBLIC_DOMAIN;
+    if (!publicDomain) {
+      console.warn('[ImageService] R2_PUBLIC_DOMAIN chưa cấu hình, không thể tự động xóa ảnh.');
+      return false;
     }
 
-    const maxWidth = options?.maxWidth ?? 1920;
-    const quality = options?.quality ?? 80;
-    const originalBytes = inputBuffer.length;
+    const bucketName = process.env.R2_BUCKET_NAME || 'lessence-media';
 
-    const compressed = await ImageService.optimizeForWeb(inputBuffer, maxWidth, quality);
-    const baseName =
-      (options?.name || 'upload').replace(/\.[^/.]+$/, '') || 'upload';
+    try {
+      // Lấy phần đuôi (Key) từ URL
+      let key = '';
+      if (url.includes(publicDomain)) {
+        key = url.split(publicDomain).pop()?.replace(/^\//, '') || '';
+      } else if (url.includes('.r2.dev')) {
+        const urlObj = new URL(url);
+        key = urlObj.pathname.replace(/^\//, '');
+      }
 
-    const body = new URLSearchParams();
-    body.set('key', apiKey.trim());
-    body.set('image', compressed.toString('base64'));
-    body.set('name', baseName);
+      if (!key) {
+        console.log(`[ImageService] URL không thuộc Cloudflare R2, bỏ qua xóa: ${url}`);
+        return false;
+      }
 
-    const res = await fetch('https://api.imgbb.com/1/upload', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-      body
-    });
+      console.log(`[ImageService] Đang xóa file trên Cloudflare R2: Bucket=${bucketName}, Key=${key}`);
+      
+      const client = getS3Client();
+      await client.send(
+        new DeleteObjectCommand({
+          Bucket: bucketName,
+          Key: key,
+        })
+      );
 
-    const json = (await res.json()) as {
-      success?: boolean;
-      status?: number;
-      error?: { message?: string };
-      data?: {
-        url?: string;
-        display_url?: string;
-        thumb?: { url?: string };
-        delete_url?: string;
-      };
-    };
-
-    if (!json.success || !json.data?.url || !json.data?.display_url) {
-      const msg = json.error?.message || 'ImgBB từ chối hoặc phản hồi không hợp lệ.';
-      throw new Error(msg);
+      console.log(`[ImageService] Đã xóa file trên R2 thành công: ${key}`);
+      return true;
+    } catch (error) {
+      console.error('[ImageService R2 Delete Error]', error);
+      return false;
     }
-
-    return {
-      url: json.data.url,
-      displayUrl: json.data.display_url,
-      thumbUrl: json.data.thumb?.url,
-      deleteUrl: json.data.delete_url,
-      originalBytes,
-      compressedBytes: compressed.length
-    };
   }
 }

@@ -1,6 +1,7 @@
 import { Product } from '../models/Product.ts';
 import type { IProduct } from '../models/Product.ts';
 import { redis } from '../config/redis.ts';
+import { ImageService } from './ImageService.ts';
 
 export class ProductService {
   private static CACHE_TTL = 300; // 5 minutes
@@ -22,9 +23,12 @@ export class ProductService {
     }
 
     // 2. Nếu không có cache, lấy từ DB
-    const products = await Product.find({ tenantId, tag: 'New' })
+    const products = await Product.find({
+      tenantId,
+      tag: { $regex: /(?:^|,)\s*New\s*(?:,|$)/i }
+    })
       .sort({ createdAt: -1 })
-      .limit(10);
+      .limit(4);
 
     // 3. Lưu vào Cache
     if (products.length > 0) {
@@ -55,9 +59,59 @@ export class ProductService {
     }
 
     // 2. Nếu không có cache, lấy từ DB
-    const products = await Product.find({ tenantId, tag: 'Sale' })
-      .sort({ createdAt: -1 })
-      .limit(10);
+    const now = new Date();
+    
+    // Tìm sản phẩm giảm giá có thời gian kết thúc gần nhất trong tương lai
+    const upcomingSale = await Product.findOne({
+      tenantId,
+      tag: { $regex: /(?:^|,)\s*Sale\s*(?:,|$)/i },
+      discountPercentage: { $gt: 0 },
+      discountEndDate: { $gt: now }
+    }).sort({ discountEndDate: 1 });
+
+    let products = [];
+
+    if (upcomingSale && upcomingSale.discountEndDate) {
+      const targetEndDate = upcomingSale.discountEndDate;
+      // Chỉ lấy các sản phẩm có cùng thời gian kết thúc giảm giá này
+      products = await Product.find({
+        tenantId,
+        tag: { $regex: /(?:^|,)\s*Sale\s*(?:,|$)/i },
+        discountPercentage: { $gt: 0 },
+        discountEndDate: targetEndDate,
+        $or: [
+          { discountStartDate: null },
+          { discountStartDate: { $exists: false } },
+          { discountStartDate: { $lte: now } }
+        ]
+      })
+        .sort({ createdAt: -1 })
+        .limit(4);
+    } else {
+      // Nếu không có sản phẩm nào có hạn giảm giá tương lai, lấy các sản phẩm giảm giá vô thời hạn (null hoặc không có hạn)
+      products = await Product.find({
+        tenantId,
+        tag: { $regex: /(?:^|,)\s*Sale\s*(?:,|$)/i },
+        discountPercentage: { $gt: 0 },
+        $and: [
+          {
+            $or: [
+              { discountStartDate: null },
+              { discountStartDate: { $exists: false } },
+              { discountStartDate: { $lte: now } }
+            ]
+          },
+          {
+            $or: [
+              { discountEndDate: null },
+              { discountEndDate: { $exists: false } }
+            ]
+          }
+        ]
+      })
+        .sort({ createdAt: -1 })
+        .limit(4);
+    }
 
     // 3. Lưu vào Cache
     if (products.length > 0) {
@@ -89,6 +143,14 @@ export class ProductService {
    * Cập nhật sản phẩm
    */
   static async updateProduct(id: string, data: Partial<IProduct>, tenantId: string): Promise<IProduct | null> {
+    let oldImage = '';
+    if (data.image) {
+      const oldProduct = await Product.findOne({ _id: id, tenantId });
+      if (oldProduct && oldProduct.image && oldProduct.image !== data.image) {
+        oldImage = oldProduct.image;
+      }
+    }
+
     const updatedProduct = await Product.findOneAndUpdate(
       { _id: id, tenantId },
       { $set: data },
@@ -97,10 +159,15 @@ export class ProductService {
 
     // Xóa các cache liên quan sau khi cập nhật
     if (updatedProduct) {
+      if (oldImage) {
+        ImageService.deleteFromR2(oldImage).catch(err => {
+          console.error('Lỗi khi xóa ảnh cũ sản phẩm khỏi R2:', err);
+        });
+      }
+
       await redis.del(`products:new:tag:${tenantId}`);
       await redis.del(`products:sale:tag:${tenantId}`);
-      // Nếu có cache cho từng sản phẩm riêng lẻ, cũng cần xóa:
-      await redis.del(`products:${id}:${tenantId}`); // Giả sử có cache cho từng ID
+      await redis.del(`products:${id}:${tenantId}`);
     }
     
     return updatedProduct;
@@ -110,7 +177,25 @@ export class ProductService {
    * Xóa sản phẩm
    */
   static async deleteProduct(id: string, tenantId: string): Promise<boolean> {
+    const product = await Product.findOne({ _id: id, tenantId });
+    if (!product) return false;
+
     const result = await Product.deleteOne({ _id: id, tenantId });
+    if (result.deletedCount > 0) {
+      if (product.image) {
+        ImageService.deleteFromR2(product.image).catch(err => {
+          console.error('Lỗi khi xóa ảnh sản phẩm khỏi R2:', err);
+        });
+      }
+
+      try {
+        await redis.del(`products:new:tag:${tenantId}`);
+        await redis.del(`products:sale:tag:${tenantId}`);
+        await redis.del(`products:${id}:${tenantId}`);
+      } catch (err) {
+        console.warn('Failed to clear product caches on deletion:', err);
+      }
+    }
     return result.deletedCount > 0;
   }
 
@@ -122,6 +207,16 @@ export class ProductService {
       ...data,
       tenantId
     });
-    return await product.save();
+    const saved = await product.save();
+    
+    // Clear Redis Cache so that the new product immediately shows up on the homepage/outside!
+    try {
+      await redis.del(`products:new:tag:${tenantId}`);
+      await redis.del(`products:sale:tag:${tenantId}`);
+    } catch (err) {
+      console.warn('Failed to clear product caches on creation:', err);
+    }
+    
+    return saved;
   }
 }

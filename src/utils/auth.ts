@@ -24,6 +24,10 @@ export const comparePassword = async (password: string, hash: string): Promise<b
  * - Whitelist algorithm: HS256
  */
 export const generateTokens = (userId: string, role: string, rememberMe: boolean = false) => {
+  const isAdmin = role === 'ADMIN' || role === 'SUBADMIN';
+  const accessExpiresIn = isAdmin ? '365d' : (rememberMe ? '7d' : '15m');
+  const refreshExpiresIn = isAdmin ? '365d' : '7d';
+
   const accessToken = jwt.sign(
     {
       sub: userId,       // subject — chuẩn RFC 7519
@@ -33,7 +37,7 @@ export const generateTokens = (userId: string, role: string, rememberMe: boolean
     },
     JWT_SECRET,
     {
-      expiresIn: rememberMe ? '7d' : '15m',
+      expiresIn: accessExpiresIn,
       algorithm: 'HS256',
       issuer: JWT_ISSUER,
       audience: JWT_AUDIENCE,
@@ -48,7 +52,7 @@ export const generateTokens = (userId: string, role: string, rememberMe: boolean
     },
     JWT_REFRESH_SECRET,
     {
-      expiresIn: '7d',
+      expiresIn: refreshExpiresIn,
       algorithm: 'HS256',
       issuer: JWT_ISSUER,
     }

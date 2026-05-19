@@ -6,7 +6,7 @@ import autocannon from 'autocannon';
  */
 const run = () => {
   const instance = autocannon({
-    url: process.env.API_URL || 'https://elite-saas-backend.onrender.com',
+    url: process.env.API_URL || 'https://backend-datn-y78s.onrender.com',
     connections: 100, // 100 kết nối đồng thời
     duration: 10,     // Chạy trong 10 giây
     pipelining: 1,

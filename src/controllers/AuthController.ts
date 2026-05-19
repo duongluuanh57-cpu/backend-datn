@@ -1,7 +1,7 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { AuthService } from '../services/AuthService.ts';
 import { PostHogService } from '../services/PostHogService.ts';
-import { verifyRefreshToken, generateTokens } from '../utils/auth.ts';
+import { verifyRefreshToken, generateTokens, hashPassword, comparePassword } from '../utils/auth.ts';
 import { redis } from '../config/redis.ts';
 import { UnauthorizedError } from '../utils/errors.ts';
 import { UserRepository } from '../repositories/UserRepository.ts';
@@ -88,5 +88,37 @@ export class AuthController {
       success: true,
       message: 'Đăng xuất thành công',
     });
+  }
+
+  /**
+   * POST /api/auth/change-password
+   * Body: { currentPassword, newPassword }
+   * Yêu cầu: Đã xác thực (Authorization: Bearer <access_token>)
+   */
+  static async changePassword(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const body = request.body as { currentPassword: string; newPassword: string };
+      const userId = (request as any).user?.userId;
+      if (!userId) throw new UnauthorizedError('Vui lòng đăng nhập');
+
+      const user = await UserRepository.findById(userId);
+      if (!user) throw new UnauthorizedError('Người dùng không tồn tại');
+
+      if (!user.passwordHash) {
+        return reply.status(400).send({ success: false, message: 'Người dùng không có mật khẩu (OAuth)' });
+      }
+
+      const isMatch = await comparePassword(body.currentPassword, user.passwordHash);
+      if (!isMatch) {
+        return reply.status(400).send({ success: false, message: 'Mật khẩu hiện tại không đúng' });
+      }
+
+      const newHash = await hashPassword(body.newPassword);
+      await UserRepository.update(userId, { passwordHash: newHash } as any);
+
+      return reply.send({ success: true, message: 'Đổi mật khẩu thành công' });
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, message: err.message });
+    }
   }
 }

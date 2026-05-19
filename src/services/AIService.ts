@@ -6,8 +6,8 @@ export class AIService {
   private static _genAI: GoogleGenerativeAI;
   private static CACHE_TTL = 60 * 60 * 24;
   private static PRIMARY_MODEL = 'gemini-3.1-flash-lite';
-  private static FALLBACK_MODEL = 'gemma-4-31b';
-  private static SECONDARY_FALLBACK_MODEL = 'gemma-4-26b';
+  private static FALLBACK_MODEL = 'gemini-3.1-flash-lite';
+  private static SECONDARY_FALLBACK_MODEL = 'gemini-3.1-flash-lite';
 
   private static get client() {
     if (!this._genAI) {
@@ -21,7 +21,7 @@ export class AIService {
   }
 
   /**
-   * identifyProduct - Fallback cascade with retry: Gemini 3.1 → Gemma 4 31B → Gemma 4 26B → Retry from start
+   * identifyProduct - Fallback cascade with retry: Gemini 3.1 Flash Lite exclusively with retry attempts
    */
   static async identifyProduct(image: string, prompt: string): Promise<string> {
     const modelsToTry = [this.PRIMARY_MODEL, this.FALLBACK_MODEL, this.SECONDARY_FALLBACK_MODEL];
@@ -87,7 +87,7 @@ export class AIService {
   }
 
   /**
-   * createChatStream - Fallback cascade with retry: Gemini 3.1 → Gemma 4 31B → Gemma 4 26B → Retry from start
+   * createChatStream - Fallback cascade with retry: Gemini 3.1 Flash Lite exclusively with retry attempts
    */
   static async createChatStream(messages: any[], systemPrompt?: string, image?: string) {
     const modelsToTry = [this.PRIMARY_MODEL, this.FALLBACK_MODEL, this.SECONDARY_FALLBACK_MODEL];
@@ -186,18 +186,48 @@ export class AIService {
   }
 
   /**
-   * generateResponse - Fallback cascade with retry: Gemini 3.1 → Gemma 4 31B → Gemma 4 26B → Retry from start
+   * generateResponse - Fallback cascade with retry: Gemini 3.1 Flash Lite exclusively with retry attempts
    */
   static async generateResponse(prompt: string, userId?: string, modelName: string = 'gemini-3.1-flash-lite') {
-    // If a specific model is requested, try only that model (no fallback)
+    console.log(`🔍 [AIService DEBUG] generateResponse received prompt:`, {
+      type: typeof prompt,
+      isNull: prompt === null,
+      isUndefined: prompt === undefined,
+      isNaN: typeof prompt === 'number' && isNaN(prompt),
+      valueStr: String(prompt).substring(0, 100),
+      length: typeof prompt === 'string' ? prompt.length : 'N/A'
+    });
+
+    // If a specific model is requested, try with retry (3 attempts with exponential backoff)
     if (modelName !== this.PRIMARY_MODEL) {
-      try {
-        const model = this.client.getGenerativeModel({ model: modelName });
-        const result = await model.generateContent(prompt);
-        return result.response.text();
-      } catch (error: any) {
-        console.error(`❌ [AIService] Error with requested model ${modelName}:`, error.message);
-        throw error;
+      const maxRetries = 3;
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          console.log(`🎯 [AIService] Attempt ${attempt}/${maxRetries}: ${modelName}`);
+          const model = this.client.getGenerativeModel({ model: modelName });
+          const result = await model.generateContent([prompt]);
+          const text = result.response.text();
+          console.log(`✅ [AIService] Success with ${modelName} on attempt ${attempt}`);
+          return text;
+        } catch (error: any) {
+          const isLastAttempt = attempt === maxRetries;
+          
+          if (error.status === 503 || error.status === 429 || error.message?.includes('high demand') || error.message?.includes('overloaded')) {
+            if (!isLastAttempt) {
+              const waitTime = 1000 * attempt; // Exponential backoff: 1s, 2s, 3s
+              console.warn(`⚠️ [AIService] ${modelName} is busy/overloaded. Retrying in ${waitTime}ms... (attempt ${attempt}/${maxRetries})`);
+              await new Promise(resolve => setTimeout(resolve, waitTime));
+              continue;
+            } else {
+              console.error(`❌ [AIService] ${modelName} exhausted after ${maxRetries} attempts. Last error:`, error.message);
+              throw new Error(`${modelName} is currently unavailable after ${maxRetries} attempts. Please try again later.`);
+            }
+          } else {
+            // Non-recoverable error
+            console.error(`❌ [AIService] Fatal error on ${modelName}:`, error.message);
+            throw error;
+          }
+        }
       }
     }
 
@@ -216,7 +246,7 @@ export class AIService {
         try {
           console.log(`🎯 [AIService] Attempt ${attemptNumber}/${totalAttempts}: ${currentModel} (Retry cycle: ${retryCount + 1}/${maxRetries + 1})`);
           const model = this.client.getGenerativeModel({ model: currentModel });
-          const result = await model.generateContent(prompt);
+          const result = await model.generateContent([prompt]);
           const text = result.response.text();
           
           console.log(`✅ [AIService] generateResponse successful with: ${currentModel} (after ${attemptNumber} attempts)`);

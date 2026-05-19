@@ -11,11 +11,10 @@ const AgentState = Annotation.Root({
 });
 
 /**
- * AgentService — Quản lý luồng AI đa tác nhân bằng LangGraph (Hybrid Gemini & Gemma + Redis Cache)
+ * AgentService — Quản lý luồng AI đa tác nhân bằng LangGraph (Exclusively Gemini 3.1 Flash Lite + Redis Cache)
  */
 export class AgentService {
   private static _gemini: ChatGoogleGenerativeAI;
-  private static _gemma: ChatGoogleGenerativeAI;
   private static _app: any;
   private static CACHE_TTL = 60 * 60 * 24; // 24 giờ
 
@@ -28,17 +27,6 @@ export class AgentService {
       });
     }
     return this._gemini;
-  }
-
-  // Model Gemma 4 31B
-  private static get gemma() {
-    if (!this._gemma) {
-      this._gemma = new ChatGoogleGenerativeAI({
-        apiKey: process.env.GEMINI_API_KEY,
-        model: "gemma-4-31b-it",
-      });
-    }
-    return this._gemma;
   }
 
   private static generateCacheKey(task: string): string {
@@ -65,11 +53,11 @@ export class AgentService {
     return this._app;
   }
 
-  // Node 1: Researcher Agent (Gemma 4 31B) - Tối giản
+  // Node 1: Researcher Agent (Gemini 3.1 Flash-Lite) - Tối giản
   private static async researcherNode(state: typeof AgentState.State) {
-    console.log('--- [Step 1] Researcher (Gemma 4 31B) is researching... ---');
+    console.log('--- [Step 1] Researcher (Gemini 3.1 Flash-Lite) is researching... ---');
     try {
-      const response = await this.gemma.invoke([
+      const response = await this.gemini.invoke([
         ["system", "Bạn là một người nghiên cứu thông thái nhưng thích kể chuyện bằng ngôn ngữ bình dân. Hãy tóm tắt ngắn gọn, dễ hiểu nhất có thể về chủ đề này."],
         ["user", state.task]
       ]);
@@ -80,11 +68,11 @@ export class AgentService {
     }
   }
 
-  // Node 2: Writer Agent (Gemma 4 31B) - Bình dân hóa
+  // Node 2: Writer Agent (Gemini 3.1 Flash-Lite) - Bình dân hóa
   private static async writerNode(state: typeof AgentState.State) {
-    console.log('--- [Step 2] Writer (Gemma 4 31B) is writing... ---');
+    console.log('--- [Step 2] Writer (Gemini 3.1 Flash-Lite) is writing... ---');
     try {
-      const response = await this.gemma.invoke([
+      const response = await this.gemini.invoke([
         ["system", "Bạn là một người kể chuyện tài ba. Hãy dựa trên nghiên cứu để viết một bài viết cực kỳ tối giản, dùng từ ngữ mà một người bình thường cũng hiểu được ngay. Tránh dùng từ chuyên môn khó hiểu."],
         ["user", `Nghiên cứu: ${state.research}`]
       ]);
