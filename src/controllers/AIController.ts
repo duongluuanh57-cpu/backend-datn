@@ -256,7 +256,8 @@ ${globalInfo}
         availableConcentrations,
         availableSegments,
         availableGenders,
-        availableSizes
+        availableSizes,
+        availableTags
       } = req.body as {
         name: string;
         brand?: string;
@@ -276,6 +277,7 @@ ${globalInfo}
         availableSegments?: string[];
         availableGenders?: string[];
         availableSizes?: string[];
+        availableTags?: string[];
       };
 
       if (!name) return reply.status(400).send({ error: 'Name is required' });
@@ -440,7 +442,7 @@ You MUST select values from the existing database lists below. DO NOT create new
 JSON Schema:
 {
   "brand": "Factually correct brand name strictly selected from the database brand list",
-  "tag": "one of: 'New', 'Sale', 'Trending', 'Limited', 'Standard'",
+  "tag": "MUST be EXACTLY ONE of these: ${JSON.stringify(availableTags || ['New', 'Sale', 'Trending', 'Limited', 'Standard'])}. Do NOT create new tags.",
   "scentGroup": "Strictly selected from the database scent groups list",
   "concentration": "Strictly selected from the database concentrations list",
   "segment": "Strictly selected from the database segments list",
