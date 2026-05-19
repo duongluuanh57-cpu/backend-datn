@@ -58,7 +58,7 @@ export class AuthService {
     // 7. Sinh bộ đôi JWT Token
     const tokens = generateTokens(newUser._id.toString(), newUser.role);
     
-    return { user: { id: newUser._id, username: newUser.username, email: newUser.email, tenantId: newUser.tenantId }, tokens };
+    return { user: { id: newUser._id, username: newUser.username, email: newUser.email, role: newUser.role, tenantId: newUser.tenantId }, tokens };
   }
 
   static async login(data: LoginInput & { rememberMe?: boolean }, metadata: { ip: string, userAgent: string }) {
@@ -104,7 +104,7 @@ export class AuthService {
     // 6. Sinh bộ đôi Token
     const tokens = generateTokens(user._id.toString(), user.role, data.rememberMe);
     
-    return { user: { id: user._id, username: user.username, email: user.email, tenantId: (user as any).tenantId }, tokens };
+    return { user: { id: user._id, username: user.username, email: user.email, role: user.role, tenantId: (user as any).tenantId }, tokens };
   }
 
   /**
