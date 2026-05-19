@@ -49,4 +49,14 @@ export async function authRoutes(app: FastifyInstance) {
       body: ChangePasswordSchema
     }
   }, AuthController.changePassword);
+
+  // Cập nhật thông tin cá nhân (hỗ trợ đổi tên username)
+  typedApp.patch('/update-profile', {
+    preHandler: authMiddleware,
+    schema: {
+      body: z.object({
+        username: z.string().min(3, 'Tên người dùng phải có ít nhất 3 ký tự').max(50)
+      })
+    }
+  }, AuthController.updateProfile);
 }

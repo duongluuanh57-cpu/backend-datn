@@ -121,4 +121,63 @@ export class AuthController {
       return reply.status(500).send({ success: false, message: err.message });
     }
   }
+
+  /**
+   * PATCH /api/auth/update-profile
+   * Body: { username, email }
+   * Yêu cầu: Đã xác thực
+   */
+  static async updateProfile(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const body = request.body as { username?: string; email?: string };
+      const userId = (request as any).user?.userId;
+      if (!userId) throw new UnauthorizedError('Vui lòng đăng nhập');
+
+      const updateData: any = {};
+
+      if (body.username !== undefined) {
+        if (!body.username || body.username.trim().length < 3) {
+          return reply.status(400).send({ success: false, message: 'Tên người dùng phải có ít nhất 3 ký tự' });
+        }
+        updateData.username = body.username.trim();
+      }
+
+      if (body.email !== undefined) {
+        const trimmedEmail = body.email.trim();
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(trimmedEmail)) {
+          return reply.status(400).send({ success: false, message: 'Email không đúng định dạng' });
+        }
+
+        // Check if email already exists for another user
+        const existingUser = await UserRepository.findByEmail(trimmedEmail);
+        if (existingUser && existingUser._id.toString() !== userId) {
+          return reply.status(400).send({ success: false, message: 'Email này đã được sử dụng bởi tài khoản khác' });
+        }
+        updateData.email = trimmedEmail;
+      }
+
+      if (Object.keys(updateData).length === 0) {
+        return reply.status(400).send({ success: false, message: 'Không có thông tin nào để cập nhật' });
+      }
+
+      const user = await UserRepository.findById(userId);
+      if (!user) throw new UnauthorizedError('Người dùng không tồn tại');
+
+      const updatedUser = await UserRepository.update(userId, updateData as any);
+      if (!updatedUser) {
+        return reply.status(404).send({ success: false, message: 'Không thể cập nhật thông tin' });
+      }
+
+      const { passwordHash, ...safeUser } = updatedUser as any;
+
+      return reply.send({
+        success: true,
+        message: 'Cập nhật thông tin cá nhân thành công',
+        data: safeUser
+      });
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, message: err.message });
+    }
+  }
 }

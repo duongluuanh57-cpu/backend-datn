@@ -66,4 +66,9 @@ export async function aiRoutes(app: FastifyInstance) {
   server.post('/suggest-price', {
     handler: AIController.suggestPrice,
   });
+
+  // POST /api/ai/feedback - Nhận đánh giá sao từ user, AI tự điều chỉnh và stream phản hồi
+  server.post('/feedback', {
+    handler: AIController.handleFeedback,
+  });
 }
