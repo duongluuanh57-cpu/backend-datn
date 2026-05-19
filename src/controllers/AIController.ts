@@ -505,22 +505,14 @@ Write a detailed historical record, description, and country of origin of the lu
 Your tasks:
 1. True Country of Origin: Suggest the factually correct country of origin (e.g., Chanel -> "Pháp", Gucci -> "Ý", Jo Malone -> "Vương quốc Anh", Tom Ford -> "Mỹ").
 2. Exquisite Story/Description: Write a highly elegant, high-end, smooth, and professional brand story or classification description in Vietnamese. 2-3 sentences.
-3. Target Gender: Suggest the correct target gender for the brand's primary catalogs (e.g., "Nam, Nữ, Unisex", "Unisex", "Nam", "Nữ").
-4. Signature Scent Groups: List signature perfume scent groups of the brand in Vietnamese (e.g., "Hương hoa cỏ Phương Đông (Floral Oriental)", "Hương Gỗ cay nồng", "Chypre").
-5. Common Concentrations: List common perfume concentrations the brand produces (e.g., "EDP, EDT, Cologne, Parfum").
-6. Brand Classification Group: Factually correct segment of the brand (e.g., "Niche", "Designer", "Indie").
-7. Language Control: Output strictly in 100% pure, standard Vietnamese (tiếng Việt). Absolutely NO Chinese characters (Hán tự), Sino-Chinese terms, or mixed languages.
-8. Output STRICTLY a valid JSON object conforming to the schema below.
-9. Do NOT include markdown code block syntax (like \`\`\`json). Just the raw JSON object.
+3. Language Control: Output strictly in 100% pure, standard Vietnamese (tiếng Việt). Absolutely NO Chinese characters (Hán tự), Sino-Chinese terms, or mixed languages.
+4. Output STRICTLY a valid JSON object conforming to the schema below.
+5. Do NOT include markdown code block syntax (like \`\`\`json). Just the raw JSON object.
 
 JSON Schema:
 {
   "origin": "Factually correct country of origin in Vietnamese",
-  "description": "Exquisite, poetic story or taxonomy description in Vietnamese. 2-3 sentences.",
-  "gender": "Giới tính phù hợp cho thương hiệu (e.g., Nam, Nữ, Unisex)",
-  "scentGroup": "Nhóm hương đặc trưng nổi tiếng nhất của hãng",
-  "concentration": "Nồng độ nước hoa chủ đạo (e.g., EDP, EDT, Parfum)",
-  "group": "Phân loại phân khúc thương hiệu (e.g., Niche, Designer, Classic)"
+  "description": "Exquisite, poetic story or taxonomy description in Vietnamese. 2-3 sentences."
 }
 `;
 

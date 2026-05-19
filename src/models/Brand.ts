@@ -6,10 +6,6 @@ export interface IBrand extends Document {
   logo?: string;
   description?: string;
   origin?: string;
-  gender?: string;
-  scentGroup?: string;
-  concentration?: string;
-  group?: string;
   status: 'active' | 'inactive';
   featured: boolean;
   tenantId: string;
@@ -23,10 +19,6 @@ const BrandSchema = new Schema<IBrand>(
     logo: { type: String },
     description: { type: String },
     origin: { type: String },
-    gender: { type: String },
-    scentGroup: { type: String },
-    concentration: { type: String },
-    group: { type: String },
     status: { type: String, enum: ['active', 'inactive'], default: 'active' },
     featured: { type: Boolean, default: false }
   },
