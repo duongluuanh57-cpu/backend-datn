@@ -11,6 +11,14 @@ export class BrandService {
   }
 
   /**
+   * Lấy danh sách các xuất xứ duy nhất của thương hiệu
+   */
+  static async getBrandOrigins(tenantId: string): Promise<string[]> {
+    const origins = await Brand.find({ tenantId, origin: { $ne: null, $exists: true } }).distinct('origin');
+    return origins.filter((o): o is string => typeof o === 'string' && o.trim() !== '').sort();
+  }
+
+  /**
    * Lấy chi tiết thương hiệu theo ID
    */
   static async getBrandById(id: string, tenantId: string): Promise<IBrand | null> {

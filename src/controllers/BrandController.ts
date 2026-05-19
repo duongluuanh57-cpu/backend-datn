@@ -23,6 +23,26 @@ export class BrandController {
   }
 
   /**
+   * GET /api/brands/origins
+   */
+  static async getBrandOrigins(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const origins = await BrandService.getBrandOrigins(tenantId);
+      
+      return reply.status(200).send({
+        success: true,
+        data: origins,
+      });
+    } catch (error: any) {
+      return reply.status(500).send({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
    * GET /api/brands/:id
    */
   static async getBrandById(req: FastifyRequest, reply: FastifyReply) {
