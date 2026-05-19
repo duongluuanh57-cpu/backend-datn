@@ -19,7 +19,7 @@ export class TagService {
    * Fetch all tags for the tenant
    */
   static async getAllTags(tenantId: string): Promise<ITag[]> {
-    let tags = await Tag.find({ tenantId }).sort({ name: 1 });
+    let tags = await Tag.find({ tenantId, status: 'active' }).sort({ name: 1 });
     if (tags.length === 0) {
       console.log(`🌱 [Tag Seeding] Seeding default tags ('Giảm giá' and 'Sản phẩm mới') for tenant: ${tenantId}`);
       try {
@@ -38,7 +38,7 @@ export class TagService {
           }
         ];
         await Tag.insertMany(defaultTags);
-        tags = await Tag.find({ tenantId }).sort({ name: 1 });
+        tags = await Tag.find({ tenantId, status: 'active' }).sort({ name: 1 });
       } catch (err) {
         console.error('❌ Error seeding default tags:', err);
       }
