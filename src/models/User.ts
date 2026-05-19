@@ -11,6 +11,13 @@ export interface IUser extends Document {
   tenantId: string; // Thêm vào interface
   twoFactorSecret?: string;
   twoFactorEnabled: boolean;
+  // Các trường thông tin bổ sung (tùy chọn)
+  fullName?: string;
+  phoneNumber?: string;
+  gender?: 'MALE' | 'FEMALE' | 'OTHER' | '';
+  address?: string;
+  province?: string;
+  district?: string;
   // OAuth fields
   oauthProvider?: 'google' | 'github';  // Provider đăng nhập OAuth
   oauthId?: string;                      // ID từ provider
@@ -29,10 +36,18 @@ const UserSchema = new Schema<IUser>(
     tenantId: { type: String, required: true, index: true }, // Đã bổ sung
     twoFactorSecret: { type: String },
     twoFactorEnabled: { type: Boolean, default: false },
+    // Các trường thông tin bổ sung (tùy chọn)
+    fullName: { type: String, default: '' },
+    phoneNumber: { type: String, default: '' },
+    gender: { type: String, enum: ['MALE', 'FEMALE', 'OTHER', ''], default: '' },
+    address: { type: String, default: '' },
+    province: { type: String, default: '' },
+    district: { type: String, default: '' },
     oauthProvider: { type: String, enum: ['google', 'github'], index: true },
     oauthId: { type: String, index: true },
     avatar: { type: String },
   },
+
   {
     timestamps: true, // Tự động quản lý createdAt và updatedAt
     collection: 'users' // Ép trùng tên với collection 'users' trên DB của bạn

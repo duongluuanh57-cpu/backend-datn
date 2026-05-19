@@ -55,14 +55,21 @@ export async function authRoutes(app: FastifyInstance) {
     preHandler: authMiddleware
   }, AuthController.getMe);
 
-  // Cập nhật thông tin cá nhân (hỗ trợ đổi tên username và email)
+  // Cập nhật thông tin cá nhân
   typedApp.patch('/update-profile', {
     preHandler: authMiddleware,
     schema: {
       body: z.object({
         username: z.string().min(3, 'Tên người dùng phải có ít nhất 3 ký tự').max(50).optional(),
-        email: z.string().email('Email không đúng định dạng').optional()
+        email: z.string().email('Email không đúng định dạng').optional(),
+        fullName: z.string().max(100).optional(),
+        phoneNumber: z.string().max(20).optional(),
+        gender: z.enum(['MALE', 'FEMALE', 'OTHER', '']).optional(),
+        address: z.string().max(200).optional(),
+        province: z.string().max(100).optional(),
+        district: z.string().max(100).optional()
       })
     }
   }, AuthController.updateProfile);
 }
+
