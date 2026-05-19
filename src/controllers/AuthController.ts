@@ -132,12 +132,8 @@ export class AuthController {
       const body = request.body as {
         username?: string;
         email?: string;
-        fullName?: string;
-        phoneNumber?: string;
-        gender?: 'MALE' | 'FEMALE' | 'OTHER' | '';
-        address?: string;
-        province?: string;
-        district?: string;
+        avatar?: string;
+        // fullName, gender, phoneNumber → use PATCH /api/user-addresses/:id instead
       };
       const userId = (request as any).user?.userId;
       if (!userId) throw new UnauthorizedError('Vui lòng đăng nhập');
@@ -166,12 +162,8 @@ export class AuthController {
         updateData.email = trimmedEmail;
       }
 
-      if (body.fullName !== undefined) updateData.fullName = body.fullName.trim();
-      if (body.phoneNumber !== undefined) updateData.phoneNumber = body.phoneNumber.trim();
-      if (body.gender !== undefined) updateData.gender = body.gender;
-      if (body.address !== undefined) updateData.address = body.address.trim();
-      if (body.province !== undefined) updateData.province = body.province.trim();
-      if (body.district !== undefined) updateData.district = body.district.trim();
+      if (body.avatar !== undefined) updateData.avatar = body.avatar.trim();
+      // fullName, gender, phoneNumber, address, province, district → use PATCH /api/user-addresses/:id instead
 
       if (Object.keys(updateData).length === 0) {
         return reply.status(400).send({ success: false, message: 'Không có thông tin nào để cập nhật' });

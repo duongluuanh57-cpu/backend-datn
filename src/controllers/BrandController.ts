@@ -128,4 +128,36 @@ export class BrandController {
       });
     }
   }
+
+  /**
+   * POST /api/brands/bulk-delete
+   */
+  static async bulkDeleteBrands(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { ids } = req.body as { ids: string[] };
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return reply.status(400).send({ success: false, message: 'Danh sách ID không hợp lệ' });
+      }
+      
+      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      
+      const success = await BrandService.bulkDeleteBrands(ids, tenantId);
+      if (!success) {
+        return reply.status(404).send({
+          success: false,
+          message: 'Không thể xóa các thương hiệu',
+        });
+      }
+      
+      return reply.status(200).send({
+        success: true,
+        message: `Đã xóa thành công ${ids.length} thương hiệu`,
+      });
+    } catch (error: any) {
+      return reply.status(500).send({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
 }

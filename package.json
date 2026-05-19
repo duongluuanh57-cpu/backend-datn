@@ -8,7 +8,12 @@
     "build": "esbuild src/server.ts --bundle --platform=node --target=node22 --outfile=dist/server.js --format=esm --minify --external:sharp --external:dotenv --packages=external",
     "start": "node dist/server.js",
     "test": "vitest run",
-    "clean": "node -e \"const fs = require('fs'); if (fs.existsSync('dist')) fs.rmSync('dist', { recursive: true, force: true }); console.log('🧹 Cleaned dist folder')\""
+    "clean": "node -e \"const fs = require('fs'); if (fs.existsSync('dist')) fs.rmSync('dist', { recursive: true, force: true }); console.log('🧹 Cleaned dist folder')\"",
+    "migrate:images": "node --strip-types src/scripts/migrate-product-images.ts",
+    "migrate:orders": "node --strip-types src/scripts/migrate-order-items.ts",
+    "migrate:taxonomies": "node --strip-types src/scripts/migrate-product-taxonomies.ts",
+    "check:orders": "node --strip-types src/scripts/check-orders.ts",
+    "seed:orders": "node --strip-types src/scripts/seed-orders.ts"
   },
   "keywords": [],
   "author": "",

@@ -4,31 +4,23 @@ import { AIService } from '../services/AIService.ts';
 
 export interface IProduct extends Document {
   name: string;
-  brand: string;
-  price: number;
-  image: string;
+  brandId: mongoose.Types.ObjectId; // Reference to Brand
+  price: number; // Giá base (có thể là giá thấp nhất của variants)
+
   description: string;
-  tag?: string;
-  scentGroup?: string;
-  concentration?: string;
-  segment?: string;
+  tags?: mongoose.Types.ObjectId[]; // Array of references to Tag
+  scentGroups?: mongoose.Types.ObjectId[]; // Array of references to ProductTaxonomy
+  concentrations?: mongoose.Types.ObjectId[]; // Array of references to ProductTaxonomy
+  segments?: mongoose.Types.ObjectId[]; // Array of references to ProductTaxonomy
   gender?: string;
   rating?: number;
   reviewsCount?: number;
-  size?: string;
-  quantityInStock: number;
+  quantityInStock: number; // Tổng số lượng tồn kho (tính từ variants)
   discountPercentage?: number;
   discountStartDate?: Date | null;
   discountEndDate?: Date | null;
-  metaTitle?: string;
-  metaDescription?: string;
-  keywords?: string[];
   soldCount?: number;
-  embedding?: number[]; // Trường lưu trữ vector ý nghĩa cho AI
   tenantId: string;
-  priceReport?: string;
-  sizeReport?: string;
-  discountReport?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -36,31 +28,23 @@ export interface IProduct extends Document {
 const ProductSchema = new Schema<IProduct>(
   {
     name: { type: String, required: true, index: true },
-    brand: { type: String, required: true, index: true },
+    brandId: { type: Schema.Types.ObjectId, ref: 'Brand', required: true, index: true },
     price: { type: Number, required: true },
-    image: { type: String, required: true },
+
     description: { type: String },
-    tag: { type: String },
-    scentGroup: { type: String },
-    concentration: { type: String },
-    segment: { type: String },
+    tags: [{ type: Schema.Types.ObjectId, ref: 'Tag' }],
+    scentGroups: [{ type: Schema.Types.ObjectId, ref: 'ProductTaxonomy' }],
+    concentrations: [{ type: Schema.Types.ObjectId, ref: 'ProductTaxonomy' }],
+    segments: [{ type: Schema.Types.ObjectId, ref: 'ProductTaxonomy' }],
     gender: { type: String },
     rating: { type: Number, default: 5 },
     reviewsCount: { type: Number, default: 0 },
-    size: { type: String },
     quantityInStock: { type: Number, default: 0 },
     discountPercentage: { type: Number, default: 0 },
     discountStartDate: { type: Date, default: null },
     discountEndDate: { type: Date, default: null },
-    metaTitle: { type: String },
-    metaDescription: { type: String },
-    keywords: [{ type: String }],
     soldCount: { type: Number, default: 0 },
-    embedding: { type: [Number] }, // Định dạng mảng số thực
     tenantId: { type: String, required: true, index: true },
-    priceReport: { type: String },
-    sizeReport: { type: String },
-    discountReport: { type: String },
   },
   {
     timestamps: true,
@@ -71,20 +55,33 @@ const ProductSchema = new Schema<IProduct>(
 /**
  * TỰ ĐỘNG NẠP KIẾN THỨC (Auto-Ingestion)
  * Mỗi khi lưu sản phẩm, tự động tạo Vector Embedding để AI thấu hiểu sản phẩm
+ * Embedding được lưu trong ProductSEO collection
  */
-ProductSchema.pre('save', async function() {
-  // Chỉ chạy nếu các trường quan trọng thay đổi
-  if (this.isModified('name') || this.isModified('brand') || this.isModified('description') || this.isModified('gender') || this.isModified('scentGroup') || this.isModified('concentration') || this.isModified('segment')) {
-    try {
-      console.log(`🧠 [AI Auto-Train] Đang nạp kiến thức cho sản phẩm: ${this.name}`);
-      const textToEmbed = `${this.name} ${this.brand} ${this.description} ${this.keywords?.join(' ')} ${this.gender || ''} ${this.scentGroup || ''} ${this.concentration || ''} ${this.segment || ''}`;
-      
-      // Gọi AI Service để lấy "vân tay ý nghĩa"
-      const vector = await AIService.generateEmbedding(textToEmbed);
-      this.embedding = vector;
-    } catch (err) {
-      console.error('⚠️ [AI Auto-Train Error] Không thể tạo embedding:', err);
-    }
+ProductSchema.post('save', async function() {
+  try {
+    console.log(`🧠 [AI Auto-Train] Đang nạp kiến thức cho sản phẩm: ${this.name}`);
+    
+    // Populate brand để lấy tên
+    await this.populate('brandId');
+    const brandName = (this.brandId as any)?.name || '';
+    
+    const textToEmbed = `${this.name} ${brandName} ${this.description} ${this.gender || ''}`;
+    
+    // Gọi AI Service để lấy "vân tay ý nghĩa"
+    const vector = await AIService.generateEmbedding(textToEmbed);
+    
+    // Lưu embedding vào ProductSEO
+    const { ProductSEO } = await import('./ProductSEO.ts');
+    await ProductSEO.findOneAndUpdate(
+      { productId: this._id, tenantId: this.tenantId },
+      { 
+        $set: { embedding: vector },
+        $setOnInsert: { productId: this._id, tenantId: this.tenantId }
+      },
+      { upsert: true, new: true }
+    );
+  } catch (err) {
+    console.error('⚠️ [AI Auto-Train Error] Không thể tạo embedding:', err);
   }
 });
 

@@ -66,6 +66,7 @@ export class AuthService {
         email: newUser.email,
         role: newUser.role,
         memberTier: newUser.memberTier,
+        status: newUser.status,
         fullName: newUser.fullName || '',
         phoneNumber: newUser.phoneNumber || '',
         gender: newUser.gender || '',
@@ -83,6 +84,14 @@ export class AuthService {
     // 1. Tìm user theo email
     const user = await UserRepository.findByEmail(data.email);
     if (!user) throw new UnauthorizedError('Email hoặc mật khẩu không chính xác');
+
+    // Kiểm tra trạng thái tài khoản (Bảo mật 2026)
+    if (user.status === 'suspended') {
+      throw new UnauthorizedError('Tài khoản của bạn đã bị tạm khóa. Vui lòng liên hệ quản trị viên.');
+    }
+    if (user.status === 'inactive') {
+      throw new UnauthorizedError('Tài khoản của bạn chưa được kích hoạt.');
+    }
 
     // 2. Đối chiếu mật khẩu
     const isMatch = await comparePassword(data.password, user.passwordHash);
@@ -129,6 +138,7 @@ export class AuthService {
         email: user.email,
         role: user.role,
         memberTier: (user as any).memberTier || 'MEMBER',
+        status: (user as any).status || 'active',
         fullName: (user as any).fullName || '',
         phoneNumber: (user as any).phoneNumber || '',
         gender: (user as any).gender || '',

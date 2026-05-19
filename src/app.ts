@@ -19,9 +19,10 @@ import { userRoutes } from './routes/user.routes.ts';
 import { statsRoutes } from './routes/stats.routes.ts';
 import { brandRoutes } from './routes/brand.routes.ts';
 import { tagRoutes } from './routes/tag.routes.ts';
-import { scentGroupRoutes } from './routes/scent-group.routes.ts';
-import { concentrationRoutes } from './routes/concentration.routes.ts';
-import { segmentRoutes } from './routes/segment.routes.ts';
+import { segmentRoutes } from './routes/segment.routes.ts'; // DEPRECATED — kept for backward compat
+import { orderRoutes } from './routes/order.routes.ts';
+import { taxonomyRoutes } from './routes/taxonomy.routes.ts';
+import { userAddressRoutes } from './routes/user-address.routes.ts';
 import rawBody from 'fastify-raw-body';
 import corePlugin from './plugins/core.ts';
 import { errorHandler } from './middleware/errorHandler.ts';
@@ -98,9 +99,12 @@ export function buildApp(): FastifyInstance {
   app.register(statsRoutes, { prefix: '/api/stats' });
   app.register(brandRoutes, { prefix: '/api/brands' });
   app.register(tagRoutes, { prefix: '/api/tags' });
-  app.register(scentGroupRoutes, { prefix: '/api/scent-groups' });
-  app.register(concentrationRoutes, { prefix: '/api/concentrations' });
+  // Taxonomy (segment, scent_group, concentration) — unified
+  app.register(taxonomyRoutes, { prefix: '/api/taxonomies' });
+  // Legacy aliases — kept for backward compat during transition
   app.register(segmentRoutes, { prefix: '/api/segments' });
+  app.register(orderRoutes, { prefix: '/api/orders' });
+  app.register(userAddressRoutes, { prefix: '/api/user-addresses' });
 
   // Global Error Handler
   app.setErrorHandler(errorHandler);

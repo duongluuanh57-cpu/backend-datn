@@ -7,23 +7,7 @@ export class BrandService {
    * Lấy danh sách toàn bộ thương hiệu của tenant
    */
   static async getAllBrands(tenantId: string): Promise<IBrand[]> {
-    let brands = await Brand.find({ tenantId }).sort({ name: 1 });
-    if (brands.length === 0) {
-      await Brand.insertMany([
-        {
-          name: "L'essence Signature",
-          logo: '',
-          origin: 'Việt Nam',
-          gender: 'Unisex',
-          scentGroup: 'Gỗ cay nồng',
-          concentration: 'EDP',
-          group: 'Niche',
-          tenantId
-        }
-      ]);
-      brands = await Brand.find({ tenantId }).sort({ name: 1 });
-    }
-    return brands;
+    return await Brand.find({ tenantId }).sort({ name: 1 });
   }
 
   /**
@@ -83,6 +67,27 @@ export class BrandService {
       ImageService.deleteFromR2(brand.logo).catch(err => {
         console.error('Lỗi khi xóa logo thương hiệu khỏi R2:', err);
       });
+    }
+    return result.deletedCount > 0;
+  }
+
+  /**
+   * Xóa hàng loạt thương hiệu khỏi hệ thống
+   */
+  static async bulkDeleteBrands(ids: string[], tenantId: string): Promise<boolean> {
+    if (!ids || ids.length === 0) return false;
+    
+    // Tìm các thương hiệu để lấy danh sách logo cần xóa
+    const brands = await Brand.find({ _id: { $in: ids }, tenantId });
+    const logos = brands.map(b => b.logo).filter(Boolean);
+
+    const result = await Brand.deleteMany({ _id: { $in: ids }, tenantId });
+    if (result.deletedCount > 0 && logos.length > 0) {
+      for (const logo of logos) {
+        ImageService.deleteFromR2(logo).catch(err => {
+          console.error('Lỗi khi xóa logo thương hiệu khỏi R2 trong bulk delete:', err);
+        });
+      }
     }
     return result.deletedCount > 0;
   }

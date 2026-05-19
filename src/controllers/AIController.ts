@@ -7,9 +7,7 @@ import { redis } from '../config/redis.ts';
 import { Product } from '../models/Product.ts';
 import { Brand } from '../models/Brand.ts';
 import { Tag } from '../models/Tag.ts';
-import { ScentGroup } from '../models/ScentGroup.ts';
-import { Concentration } from '../models/Concentration.ts';
-import { Segment } from '../models/Segment.ts';
+import { ProductTaxonomy } from '../models/ProductTaxonomy.ts';
 
 export class AIController {
   /**
@@ -99,9 +97,9 @@ export class AIController {
         const [allBrands, allTags, allScents, allConcentrations, allSegments, allProducts] = await Promise.all([
           Brand.find({ status: 'active' }).select('name').lean(),
           Tag.find({ status: 'active' }).select('name').lean(),
-          ScentGroup.find().select('name').lean(),
-          Concentration.find().select('name').lean(),
-          Segment.find().select('name').lean(),
+          ProductTaxonomy.find({ type: 'scent_group', status: 'active' }).select('name').lean(),
+          ProductTaxonomy.find({ type: 'concentration', status: 'active' }).select('name').lean(),
+          ProductTaxonomy.find({ type: 'segment', status: 'active' }).select('name').lean(),
           Product.find({}).select('name brand').lean()
         ]);
         globalInfo = `TỔNG QUAN TOÀN BỘ CƠ SỞ DỮ LIỆU CỬA HÀNG (Dùng để trả lời nếu khách hỏi tổng quát):
@@ -442,6 +440,40 @@ JSON Schema:
       }
 
       const productInfo = JSON.parse(jsonString.trim());
+
+      // Convert taxonomy strings to ObjectIds
+      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      
+      // Helper function to find or create taxonomy
+      const findOrCreateTaxonomy = async (name: string, type: 'scent_group' | 'concentration' | 'segment') => {
+        const slug = name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+        let taxonomy = await ProductTaxonomy.findOne({ tenantId, type, slug });
+        if (!taxonomy) {
+          taxonomy = await ProductTaxonomy.create({ tenantId, type, name, slug, status: 'active' });
+        }
+        return taxonomy._id;
+      };
+
+      // Convert scentGroup string to scentGroups array of ObjectIds
+      if (productInfo.scentGroup && typeof productInfo.scentGroup === 'string') {
+        const names = productInfo.scentGroup.split(',').map((s: string) => s.trim()).filter(Boolean);
+        productInfo.scentGroups = await Promise.all(names.map((name: string) => findOrCreateTaxonomy(name, 'scent_group')));
+        delete productInfo.scentGroup;
+      }
+
+      // Convert concentration string to concentrations array of ObjectIds
+      if (productInfo.concentration && typeof productInfo.concentration === 'string') {
+        const names = productInfo.concentration.split(',').map((s: string) => s.trim()).filter(Boolean);
+        productInfo.concentrations = await Promise.all(names.map((name: string) => findOrCreateTaxonomy(name, 'concentration')));
+        delete productInfo.concentration;
+      }
+
+      // Convert segment string to segments array of ObjectIds
+      if (productInfo.segment && typeof productInfo.segment === 'string') {
+        const names = productInfo.segment.split(',').map((s: string) => s.trim()).filter(Boolean);
+        productInfo.segments = await Promise.all(names.map((name: string) => findOrCreateTaxonomy(name, 'segment')));
+        delete productInfo.segment;
+      }
 
       const presetImages = [
         'https://i.ibb.co/LhJhpsKs/Midnight-Rose-copy.webp',

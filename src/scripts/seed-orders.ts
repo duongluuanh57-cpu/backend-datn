@@ -1,78 +1,265 @@
+/**
+ * Script seed 3 orders mẫu với order_items riêng biệt
+ */
+
 import mongoose from 'mongoose';
 import { Order } from '../models/Order.ts';
-import { connectDB } from '../config/database.ts';
-import 'dotenv/config';
+import { OrderItem } from '../models/OrderItem.ts';
+import { Product } from '../models/Product.ts';
+import { User } from '../models/User.ts';
+import dotenv from 'dotenv';
 
-const seedOrders = async () => {
+dotenv.config();
+
+async function seedOrders() {
   try {
-    await connectDB();
-    console.log('Connected to DB for seeding...');
+    console.log('🌱 Bắt đầu seed Orders và OrderItems...\n');
+
+    const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/your-database';
+    await mongoose.connect(mongoUri);
+    console.log('✅ Đã kết nối MongoDB\n');
 
     const tenantId = 'default';
+
+    // Lấy một số sản phẩm từ database
+    let products = await Product.find({ tenantId }).limit(5).lean();
     
-    // Xóa đơn cũ trong ngày để test cho sạch
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    await Order.deleteMany({ tenantId, createdAt: { $gte: today } });
+    if (products.length === 0) {
+      console.log('⚠️  Không tìm thấy sản phẩm. Đang tạo 5 sản phẩm mẫu...\n');
+      
+      // Tạo 5 sản phẩm mẫu
+      const sampleProducts = await Product.insertMany([
+        {
+          tenantId,
+          name: 'Chanel No.5 Eau de Parfum',
+          brand: 'Chanel',
+          price: 3500000,
+          image: 'https://i.ibb.co/C3Y4Vv7Y/perfume2.webp',
+          description: 'Hương thơm huyền thoại của Chanel',
+          size: '100ml',
+          quantityInStock: 50,
+          rating: 5,
+          tag: 'New',
+          gender: 'Nữ',
+          concentration: 'Eau de Parfum',
+          segment: 'Luxury'
+        },
+        {
+          tenantId,
+          name: 'Dior Sauvage',
+          brand: 'Dior',
+          price: 2800000,
+          image: 'https://i.ibb.co/C3Y4Vv7Y/perfume2.webp',
+          description: 'Hương thơm nam tính mạnh mẽ',
+          size: '100ml',
+          quantityInStock: 30,
+          rating: 5,
+          tag: 'Sale',
+          gender: 'Nam',
+          concentration: 'Eau de Toilette',
+          segment: 'Premium'
+        },
+        {
+          tenantId,
+          name: 'Tom Ford Black Orchid',
+          brand: 'Tom Ford',
+          price: 4200000,
+          image: 'https://i.ibb.co/C3Y4Vv7Y/perfume2.webp',
+          description: 'Hương thơm quyến rũ và bí ẩn',
+          size: '50ml',
+          quantityInStock: 20,
+          rating: 5,
+          gender: 'Unisex',
+          concentration: 'Eau de Parfum',
+          segment: 'Luxury'
+        },
+        {
+          tenantId,
+          name: 'Yves Saint Laurent Libre',
+          brand: 'YSL',
+          price: 3200000,
+          image: 'https://i.ibb.co/C3Y4Vv7Y/perfume2.webp',
+          description: 'Hương thơm tự do và hiện đại',
+          size: '90ml',
+          quantityInStock: 40,
+          rating: 5,
+          tag: 'New',
+          gender: 'Nữ',
+          concentration: 'Eau de Parfum',
+          segment: 'Premium'
+        },
+        {
+          tenantId,
+          name: 'Versace Eros',
+          brand: 'Versace',
+          price: 2500000,
+          image: 'https://i.ibb.co/C3Y4Vv7Y/perfume2.webp',
+          description: 'Hương thơm nam tính cuốn hút',
+          size: '100ml',
+          quantityInStock: 35,
+          rating: 5,
+          gender: 'Nam',
+          concentration: 'Eau de Toilette',
+          segment: 'Premium'
+        }
+      ]);
+      
+      products = sampleProducts;
+      console.log(`✅ Đã tạo ${products.length} sản phẩm mẫu\n`);
+    }
 
-    const orders = [
+    console.log(`📦 Tìm thấy ${products.length} sản phẩm để tạo orders\n`);
+
+    // Lấy user đầu tiên (nếu có)
+    const user = await User.findOne({ tenantId }).lean();
+    const userId = user?._id;
+
+    // Xóa tất cả orders và order_items cũ
+    await Order.deleteMany({ tenantId });
+    await OrderItem.deleteMany({ tenantId });
+    console.log('🗑️  Đã xóa tất cả orders và order_items cũ\n');
+
+    // === ORDER 1: Delivered ===
+    const order1 = await Order.create({
+      tenantId,
+      userId,
+      customerName: user?.name || 'Nguyễn Văn A',
+      customerEmail: user?.email || 'nguyenvana@example.com',
+      customerPhone: '0901234567',
+      customerAddress: '123 Đường ABC, Quận 1, TP.HCM',
+      status: 'delivered',
+      paymentMethod: 'bank_transfer',
+      paymentStatus: 'paid',
+      totalAmount: (products[0].price * 2) + products[1].price,
+      createdAt: new Date('2026-05-15T10:30:00.000Z')
+    });
+
+    await OrderItem.insertMany([
       {
         tenantId,
-        customerName: 'Nguyễn Văn A',
-        customerEmail: 'a@example.com',
-        totalAmount: 1200000,
-        status: 'processing',
-        items: [
-          {
-            productId: new mongoose.Types.ObjectId(),
-            name: 'Nước hoa Velvet Jasmine',
-            quantity: 1,
-            price: 1200000,
-            image: 'https://i.ibb.co/C3Y4Vv7Y/perfume2.webp'
-          }
-        ]
+        orderId: order1._id,
+        productId: products[0]._id,
+        brandId: products[0].brand ? undefined : undefined, // Sẽ cập nhật sau nếu có Brand collection
+        name: products[0].name,
+        brand: products[0].brand,
+        quantity: 2,
+        price: products[0].price,
+        subTotal: products[0].price * 2,
+        image: products[0].image || ''
       },
       {
         tenantId,
-        customerName: 'Trần Thị B',
-        customerEmail: 'b@example.com',
-        totalAmount: 2500000,
-        status: 'pending',
-        items: [
-          {
-            productId: new mongoose.Types.ObjectId(),
-            name: 'Nước hoa Midnight Rose',
-            quantity: 1,
-            price: 2500000,
-            image: 'https://i.ibb.co/qFf0N0kH/perfume1.webp'
-          }
-        ]
-      },
-      {
-        tenantId,
-        customerName: 'Lê Văn C',
-        customerEmail: 'c@example.com',
-        totalAmount: 800000,
-        status: 'delivered',
-        items: [
-          {
-            productId: new mongoose.Types.ObjectId(),
-            name: 'Nước hoa Summer Breeze',
-            quantity: 1,
-            price: 800000,
-            image: 'https://i.ibb.co/VWV0pP0p/perfume3.webp'
-          }
-        ]
+        orderId: order1._id,
+        productId: products[1]._id,
+        brandId: products[1].brand ? undefined : undefined,
+        name: products[1].name,
+        brand: products[1].brand,
+        quantity: 1,
+        price: products[1].price,
+        subTotal: products[1].price * 1,
+        image: products[1].image || ''
       }
-    ];
+    ]);
 
-    await Order.insertMany(orders);
-    console.log('✅ Seeded 3 orders for today!');
-    process.exit(0);
-  } catch (err) {
-    console.error('❌ Error seeding orders:', err);
+    console.log(`✅ Order 1: ${order1._id} - ${order1.status} - 2 items`);
+
+    // === ORDER 2: Processing ===
+    const order2 = await Order.create({
+      tenantId,
+      userId,
+      customerName: user?.name || 'Trần Thị B',
+      customerEmail: user?.email || 'tranthib@example.com',
+      customerPhone: '0912345678',
+      customerAddress: '456 Đường XYZ, Quận 3, TP.HCM',
+      status: 'processing',
+      paymentMethod: 'cod',
+      paymentStatus: 'unpaid',
+      totalAmount: products[2].price,
+      createdAt: new Date('2026-05-18T14:20:00.000Z')
+    });
+
+    await OrderItem.create({
+      tenantId,
+      orderId: order2._id,
+      productId: products[2]._id,
+      brandId: products[2].brand ? undefined : undefined,
+      name: products[2].name,
+      brand: products[2].brand,
+      quantity: 1,
+      price: products[2].price,
+      subTotal: products[2].price * 1,
+      image: products[2].image || ''
+    });
+
+    console.log(`✅ Order 2: ${order2._id} - ${order2.status} - 1 item`);
+
+    // === ORDER 3: Pending ===
+    const order3 = await Order.create({
+      tenantId,
+      userId,
+      customerName: user?.name || 'Lê Văn C',
+      customerEmail: user?.email || 'levanc@example.com',
+      customerPhone: '0923456789',
+      customerAddress: '789 Đường DEF, Quận 7, TP.HCM',
+      status: 'pending',
+      paymentMethod: 'momo',
+      paymentStatus: 'unpaid',
+      totalAmount: products[0].price + (products[3].price * 3) + products[4].price,
+      createdAt: new Date('2026-05-19T09:15:00.000Z')
+    });
+
+    await OrderItem.insertMany([
+      {
+        tenantId,
+        orderId: order3._id,
+        productId: products[0]._id,
+        brandId: products[0].brand ? undefined : undefined,
+        name: products[0].name,
+        brand: products[0].brand,
+        quantity: 1,
+        price: products[0].price,
+        subTotal: products[0].price * 1,
+        image: products[0].image || ''
+      },
+      {
+        tenantId,
+        orderId: order3._id,
+        productId: products[3]._id,
+        brandId: products[3].brand ? undefined : undefined,
+        name: products[3].name,
+        brand: products[3].brand,
+        quantity: 3,
+        price: products[3].price,
+        subTotal: products[3].price * 3,
+        image: products[3].image || ''
+      },
+      {
+        tenantId,
+        orderId: order3._id,
+        productId: products[4]._id,
+        brandId: products[4].brand ? undefined : undefined,
+        name: products[4].name,
+        brand: products[4].brand,
+        quantity: 1,
+        price: products[4].price,
+        subTotal: products[4].price * 1,
+        image: products[4].image || ''
+      }
+    ]);
+
+    console.log(`✅ Order 3: ${order3._id} - ${order3.status} - 3 items`);
+
+    console.log('\n🎉 Seed hoàn tất!');
+    console.log('📊 Đã tạo: 3 orders và 6 order_items\n');
+
+    await mongoose.disconnect();
+    console.log('✅ Đã ngắt kết nối MongoDB\n');
+
+  } catch (error) {
+    console.error('❌ Seed failed:', error);
+    await mongoose.disconnect();
     process.exit(1);
   }
-};
+}
 
 seedOrders();

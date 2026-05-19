@@ -1,14 +1,20 @@
+/**
+ * @deprecated — Legacy alias. Use /api/taxonomies?type=segment instead.
+ * Kept for backward compatibility during frontend migration.
+ */
 import type { FastifyInstance } from 'fastify';
-import { SegmentController } from '../controllers/SegmentController.ts';
-import { authMiddleware, requireRole } from '../middleware/authMiddleware.ts';
+import { TaxonomyController } from '../controllers/TaxonomyController.ts';
+import { authMiddleware } from '../middleware/authMiddleware.ts';
 
 export async function segmentRoutes(app: FastifyInstance) {
-  // Public routes
-  app.get('/', SegmentController.getAllSegments);
-  app.get('/:id', SegmentController.getSegmentById);
+  // Inject type=segment into all requests on this legacy route
+  app.addHook('preHandler', async (req) => {
+    (req.query as any).type = 'segment';
+  });
 
-  // Private routes (Admin only)
-  app.post('/', { preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')] }, SegmentController.createSegment);
-  app.patch('/:id', { preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')] }, SegmentController.updateSegment);
-  app.delete('/:id', { preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')] }, SegmentController.deleteSegment);
+  app.get('/', TaxonomyController.getAll);
+  app.get('/:id', TaxonomyController.getById);
+  app.post('/', { preHandler: authMiddleware }, TaxonomyController.create);
+  app.patch('/:id', { preHandler: authMiddleware }, TaxonomyController.update);
+  app.delete('/:id', { preHandler: authMiddleware }, TaxonomyController.remove);
 }

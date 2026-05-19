@@ -143,14 +143,6 @@ export class ProductService {
    * Cập nhật sản phẩm
    */
   static async updateProduct(id: string, data: Partial<IProduct>, tenantId: string): Promise<IProduct | null> {
-    let oldImage = '';
-    if (data.image) {
-      const oldProduct = await Product.findOne({ _id: id, tenantId });
-      if (oldProduct && oldProduct.image && oldProduct.image !== data.image) {
-        oldImage = oldProduct.image;
-      }
-    }
-
     const updatedProduct = await Product.findOneAndUpdate(
       { _id: id, tenantId },
       { $set: data },
@@ -159,12 +151,6 @@ export class ProductService {
 
     // Xóa các cache liên quan sau khi cập nhật
     if (updatedProduct) {
-      if (oldImage) {
-        ImageService.deleteFromR2(oldImage).catch(err => {
-          console.error('Lỗi khi xóa ảnh cũ sản phẩm khỏi R2:', err);
-        });
-      }
-
       await redis.del(`products:new:tag:${tenantId}`);
       await redis.del(`products:sale:tag:${tenantId}`);
       await redis.del(`products:${id}:${tenantId}`);
@@ -182,18 +168,33 @@ export class ProductService {
 
     const result = await Product.deleteOne({ _id: id, tenantId });
     if (result.deletedCount > 0) {
-      if (product.image) {
-        ImageService.deleteFromR2(product.image).catch(err => {
-          console.error('Lỗi khi xóa ảnh sản phẩm khỏi R2:', err);
-        });
-      }
-
       try {
         await redis.del(`products:new:tag:${tenantId}`);
         await redis.del(`products:sale:tag:${tenantId}`);
         await redis.del(`products:${id}:${tenantId}`);
       } catch (err) {
         console.warn('Failed to clear product caches on deletion:', err);
+      }
+    }
+    return result.deletedCount > 0;
+  }
+
+  /**
+   * Xóa hàng loạt sản phẩm
+   */
+  static async bulkDeleteProducts(ids: string[], tenantId: string): Promise<boolean> {
+    if (!ids || ids.length === 0) return false;
+    
+    const result = await Product.deleteMany({ _id: { $in: ids }, tenantId });
+    if (result.deletedCount > 0) {
+      try {
+        await redis.del(`products:new:tag:${tenantId}`);
+        await redis.del(`products:sale:tag:${tenantId}`);
+        for (const id of ids) {
+          await redis.del(`products:${id}:${tenantId}`);
+        }
+      } catch (err) {
+        console.warn('Failed to clear product caches on bulk deletion:', err);
       }
     }
     return result.deletedCount > 0;

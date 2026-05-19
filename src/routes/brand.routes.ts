@@ -11,4 +11,5 @@ export async function brandRoutes(app: FastifyInstance) {
   app.post('/', { preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')] }, BrandController.createBrand);
   app.patch('/:id', { preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')] }, BrandController.updateBrand);
   app.delete('/:id', { preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')] }, BrandController.deleteBrand);
+  app.post('/bulk-delete', { preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')] }, BrandController.bulkDeleteBrands);
 }

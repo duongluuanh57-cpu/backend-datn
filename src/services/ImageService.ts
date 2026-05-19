@@ -98,7 +98,7 @@ export class ImageService {
    */
   static async compressAndUpload(
     inputBuffer: Buffer,
-    options?: { maxWidth?: number; quality?: number; name?: string }
+    options?: { maxWidth?: number; quality?: number; name?: string; folder?: string }
   ): Promise<ImgBBUploadResult> {
     const bucketName = process.env.R2_BUCKET_NAME || 'lessence-media';
     const publicDomain = process.env.R2_PUBLIC_DOMAIN;
@@ -110,13 +110,23 @@ export class ImageService {
     const quality = options?.quality ?? 90;
     const originalBytes = inputBuffer.length;
 
+    // Chuẩn hóa và xác thực thư mục R2 (products, brands, avatars, image)
+    let folder = 'image';
+    if (options?.folder) {
+      const cleanFolder = options.folder.trim().toLowerCase().replace(/\/+$/, '');
+      if (cleanFolder === 'products') folder = 'products';
+      else if (cleanFolder === 'brands') folder = 'brands';
+      else if (cleanFolder === 'avatars' || cleanFolder === 'avaters') folder = 'avatars';
+      else if (cleanFolder === 'image' || cleanFolder === 'images') folder = 'image';
+    }
+
     const compressed = await ImageService.optimizeForWeb(inputBuffer, maxWidth, quality);
     const baseName = (options?.name || 'upload')
       .replace(/\.[^/.]+$/, '')
       .replace(/[^a-zA-Z0-9]/g, '-')
       .toLowerCase() || 'upload';
     const hash = Math.random().toString(36).substring(2, 10);
-    const fileName = `uploads/${hash}-${baseName}.webp`;
+    const fileName = `${folder}/${hash}-${baseName}.webp`;
 
     try {
       const client = getS3Client();

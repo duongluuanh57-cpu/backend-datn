@@ -9,7 +9,7 @@ function clampInt(value: unknown, fallback: number, min: number, max: number): n
 
 export class MediaController {
   /**
-   * POST /api/media/upload-imgbb — multipart: field `image` (file), optional `maxWidth`, `quality`
+   * POST /api/media/upload-imgbb — multipart: field `image` (file), optional `maxWidth`, `quality`, `folder`
    */
   static async uploadImgbb(req: FastifyRequest, reply: FastifyReply) {
     try {
@@ -17,6 +17,10 @@ export class MediaController {
       let filename = 'upload';
       let maxWidth = 1920;
       let quality = 90;
+
+      // Extract folder from query parameters first (e.g. ?folder=products)
+      const query = req.query as { folder?: string };
+      let folder = query.folder || 'image';
 
       const parts = req.parts();
       for await (const part of parts) {
@@ -29,6 +33,9 @@ export class MediaController {
           }
           if (part.fieldname === 'quality') {
             quality = clampInt(part.value, 90, 40, 100);
+          }
+          if (part.fieldname === 'folder' && part.value) {
+            folder = part.value as string;
           }
         }
       }
@@ -43,7 +50,8 @@ export class MediaController {
       const result = await ImageService.compressAndUpload(fileBuffer, {
         maxWidth,
         quality,
-        name: filename
+        name: filename,
+        folder
       });
 
       return reply.status(200).send({
@@ -60,14 +68,15 @@ export class MediaController {
   }
 
   /**
-   * POST /api/media/upload-url — JSON: { url: string, maxWidth?: number, quality?: number }
+   * POST /api/media/upload-url — JSON: { url: string, maxWidth?: number, quality?: number, folder?: string }
    */
   static async uploadUrl(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const { url, maxWidth = 1920, quality = 90 } = req.body as {
+      const { url, maxWidth = 1920, quality = 90, folder = 'image' } = req.body as {
         url: string;
         maxWidth?: number;
         quality?: number;
+        folder?: string;
       };
 
       if (!url || typeof url !== 'string' || !url.trim()) {
@@ -99,7 +108,8 @@ export class MediaController {
       const result = await ImageService.compressAndUpload(fileBuffer, {
         maxWidth: clampInt(maxWidth, 1920, 320, 4096),
         quality: clampInt(quality, 90, 40, 100),
-        name: filename
+        name: filename,
+        folder
       });
 
       return reply.status(200).send({

@@ -9,15 +9,11 @@ export interface IUser extends Document {
   role: 'USER' | 'ADMIN' | 'SUBADMIN';
   memberTier: 'MEMBER' | 'VIP' | 'ELITE MEMBER';
   tenantId: string; // Thêm vào interface
+  status: 'active' | 'inactive' | 'suspended'; // Trạng thái tài khoản
   twoFactorSecret?: string;
   twoFactorEnabled: boolean;
-  // Các trường thông tin bổ sung (tùy chọn)
-  fullName?: string;
-  phoneNumber?: string;
-  gender?: 'MALE' | 'FEMALE' | 'OTHER' | '';
-  address?: string;
-  province?: string;
-  district?: string;
+  // Personal info moved to UserAddress model (user_addresses collection)
+  // Address info moved to UserAddress model (user_addresses collection)
   // OAuth fields
   oauthProvider?: 'google' | 'github';  // Provider đăng nhập OAuth
   oauthId?: string;                      // ID từ provider
@@ -34,15 +30,10 @@ const UserSchema = new Schema<IUser>(
     role: { type: String, enum: ['USER', 'ADMIN', 'SUBADMIN'], default: 'USER' },
     memberTier: { type: String, enum: ['MEMBER', 'VIP', 'ELITE MEMBER'], default: 'MEMBER' },
     tenantId: { type: String, required: true, index: true }, // Đã bổ sung
+    status: { type: String, enum: ['active', 'inactive', 'suspended'], default: 'active', index: true }, // Trạng thái tài khoản
     twoFactorSecret: { type: String },
     twoFactorEnabled: { type: Boolean, default: false },
-    // Các trường thông tin bổ sung (tùy chọn)
-    fullName: { type: String, default: '' },
-    phoneNumber: { type: String, default: '' },
-    gender: { type: String, enum: ['MALE', 'FEMALE', 'OTHER', ''], default: '' },
-    address: { type: String, default: '' },
-    province: { type: String, default: '' },
-    district: { type: String, default: '' },
+    // fullName, gender, phoneNumber, address, province, district → moved to user_addresses collection
     oauthProvider: { type: String, enum: ['google', 'github'], index: true },
     oauthId: { type: String, index: true },
     avatar: { type: String },
