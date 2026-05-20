@@ -63,6 +63,43 @@ export class UserController {
   }
 
   /**
+   * PATCH /api/users/:id/role
+   * Cập nhật vai trò người dùng
+   */
+  static async updateUserRole(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { id } = request.params as { id: string };
+      const { role } = request.body as { role: 'USER' | 'ADMIN' };
+      
+      if (!role || !['USER', 'ADMIN'].includes(role)) {
+        return reply.status(400).send({
+          success: false,
+          message: 'Vai trò không hợp lệ',
+        });
+      }
+      
+      const user = await UserRepository.update(id, { role });
+      if (!user) {
+        return reply.status(404).send({
+          success: false,
+          message: 'Không tìm thấy người dùng',
+        });
+      }
+
+      return reply.send({
+        success: true,
+        message: 'Cập nhật vai trò thành công',
+        data: user,
+      });
+    } catch (error: any) {
+      return reply.status(500).send({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
    * DELETE /api/users/:id
    * Xóa người dùng
    */
