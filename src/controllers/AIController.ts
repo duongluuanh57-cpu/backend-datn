@@ -282,313 +282,182 @@ ${globalInfo}
 
       if (!name) return reply.status(400).send({ error: 'Name is required' });
 
-      // Build context of pre-filled fields to assist prompt guidance, preserving stock strictly
+      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+
+      // Build pre-filled context
       const preFilled: Record<string, any> = {};
-      if (brand && brand.trim()) preFilled.brand = brand.trim();
+      if (brand?.trim()) preFilled.brand = brand.trim();
       if (price && price > 0) preFilled.price = price;
-      if (size && size.trim()) preFilled.size = size.trim();
-      if (description && description.trim()) preFilled.description = description.trim();
-      if (tag && tag.trim()) preFilled.tag = tag.trim();
+      if (size?.trim()) preFilled.size = size.trim();
+      if (description?.trim()) preFilled.description = description.trim();
+      if (tag?.trim()) preFilled.tag = tag.trim();
       if (quantityInStock && quantityInStock > 0) preFilled.quantityInStock = quantityInStock;
       if (discountPercentage && discountPercentage > 0) preFilled.discountPercentage = discountPercentage;
-      if (metaTitle && metaTitle.trim()) preFilled.metaTitle = metaTitle.trim();
-      if (metaDescription && metaDescription.trim()) preFilled.metaDescription = metaDescription.trim();
-      if (keywords && keywords.trim()) preFilled.keywords = keywords.trim();
-      if (image && image.trim()) preFilled.image = image.trim();
+      if (metaTitle?.trim()) preFilled.metaTitle = metaTitle.trim();
+      if (metaDescription?.trim()) preFilled.metaDescription = metaDescription.trim();
+      if (keywords?.trim()) preFilled.keywords = keywords.trim();
+      if (image?.trim()) preFilled.image = image.trim();
 
-      console.log(`🧠 [AI Workflow Stage 1] Re-engineered details generation with Gemini 3.1 Flash Lite for: ${name}`);
+      const sizesJson = JSON.stringify(
+        availableSizes || ['2ml', '5ml', '10ml', '30ml', '50ml', '75ml', '100ml', '125ml', '150ml']
+      );
 
-      const geminiDraftPrompt = `
-You are an elite luxury perfume market price and catalog generator with deep research skills.
-Generate a comprehensive profile for the perfume named "${name}".
+      // ── OPTIMIZATION 1: Pre-fetch tất cả taxonomy & tag song song ──────────
+      // Thay vì query DB nhiều lần sau khi AI trả về → fetch 1 lần ngay từ đầu
+      console.log(`🚀 [AI generateProduct] Pre-fetching taxonomies & tags in parallel for: ${name}`);
+      const [allTaxonomies, allTags] = await Promise.all([
+        ProductTaxonomy.find({ tenantId, status: 'active' }).lean(),
+        Tag.find({ tenantId, status: 'active' }).lean()
+      ]);
 
-LIST OF AVAILABLE BRANDS EXISTING IN OUR DATABASE:
-${JSON.stringify(availableBrands || [])}
-
-LIST OF AVAILABLE SIZES/CAPACITIES IN OUR SYSTEM (YOU MUST USE ONLY THESE):
-${JSON.stringify(availableSizes || ['2ml', '5ml', '10ml', '30ml', '50ml', '75ml', '100ml', '125ml', '150ml'])}
-
-CRITICAL RULE FOR SIZES:
-- You MUST ONLY use sizes from the "LIST OF AVAILABLE SIZES/CAPACITIES" above
-- DO NOT create new sizes like "90ml" or any size not in the list
-- Each size variant must have a corresponding price calculated proportionally
-
-INSTRUCTIONS:
-1. Ensure the product name is provided (already validated). Generate only the product name and select a matching brand from the database brand list.
-2. Suggest an optimal standard retail Selling Price (Giá bán) in VNĐ for the standard size (e.g., 2,000,000 to 5,500,000 VNĐ).
-3. Provide a highly professional fragrance description written poetically in standard Vietnamese, divided into three bold headings:
-   - **Mô tả hương thơm:**
-   - **Thông số kỹ thuật & Thuộc tính:**
-   - **Nguồn gốc & Chế độ bảo hành:**
-4. Include SEO metadata (meta title under 60 chars, meta description under 160 chars in Vietnamese, and 5 keywords).
-Note: Capacity/size variants and Discount Percentage will be generated in a later step after price confirmation.
-4. For the three suggested numerical fields (Selling Price, Capacity Variants, and Discount Percentage), you MUST research and cite real-world international references and websites (such as Fragrantica, Basenotes, Sephora, Harrods, Selfridges, or official designer/niche house websites like Chanel, Dior, Creed, Le Labo, Tom Ford etc.) and draft extremely rich, highly specific Vietnamese market analysis reports:
-   - Price Decision Report (Báo cáo giải thích giá bán): Cover these exact sections with rich, long-form details:
-     * **1. Các tiêu chí cốt lõi để AI gợi ý giá:** (Detailed olfactory raw materials rarity, global scent index e.g. Fragrantica score, successful local transaction records).
-     * **2. "Nguồn sản phẩm" đóng vai trò gì trong thuật toán:** (Official distribution vs grey market price differences, safe airfreight logistic costs).
-     * **3. Tại sao AI phải đưa ra "Lý do gợi ý giá":** (Liquidity/velocity vs premium exclusivity trade-off, competitive advantages).
-     * **4. Quyết định & Khuyến nghị mức Markup (15%):** (Markup margin logic tailored to this brand).
-     * **5. Nguồn tham khảo & Đối chiếu của Gemini 3.1 Flash Lite:** (List exact websites, department stores, and catalog indexes consulted for this specific brand/perfume).
-   - Capacity Decision Report (Báo cáo giải thích dung tích): Cover 5 detailed sections explaining sizing options, portion pricing logic, decant/sample bottling costs, local customer sizing behaviors in Vietnam, and the specific references consulted.
-   - Discount Decision Report (Báo cáo giải thích chiết khấu): Cover 5 detailed sections explaining the suggested discount percentage, competitor promo levels, seasonal factors, retail margins optimization, and the specific references consulted.
-
-LANGUAGE REQUIREMENT:
-- You MUST write and describe strictly in pure, standard Vietnamese (tiếng Việt).
-- Absolutely NO Chinese characters (Hán tự), mixed Chinese-Vietnamese text, or any other languages are allowed.
-
-Respond with a raw draft containing all these details and reports.
-`;
-
-      let geminiDraftOutput = '';
-      try {
-        geminiDraftOutput = await AIService.generateResponse(geminiDraftPrompt, undefined, 'gemini-3.1-flash-lite');
-        console.log(`🧠 [AI Workflow Stage 1] Gemini 3.1 Flash Lite Draft Completed successfully.`);
-      } catch (geminiError: any) {
-        console.warn(`⚠️ [AI Fallback] Gemini 3.1 Flash Lite is currently experiencing transient Google API issues (${geminiError.message}). Retrying...`);
-        try {
-          geminiDraftOutput = await AIService.generateResponse(geminiDraftPrompt, undefined, 'gemini-3.1-flash-lite');
-          console.log(`🧠 [AI Workflow Stage 1 Fallback] Gemini 3.1 Draft Completed successfully on retry.`);
-        } catch (retryError: any) {
-          console.error(`❌ [AI Error] Gemini 3.1 Flash Lite failed all attempts for Stage 1:`, retryError.message);
-          throw retryError;
-        }
+      // Group taxonomies by type để O(1) lookup
+      const taxonomyByType: Record<string, any[]> = {};
+      for (const t of allTaxonomies) {
+        if (!taxonomyByType[t.type]) taxonomyByType[t.type] = [];
+        taxonomyByType[t.type].push(t);
       }
 
-      console.log(`✨ [AI Workflow Stage 2] Refining and Auditing with Gemini 3.1 Flash Lite...`);
-      console.log(`🔍 [AIController Stage 2 Pre-Check] Variables check:`, {
-        geminiDraftOutput_type: typeof geminiDraftOutput,
-        geminiDraftOutput_val: String(geminiDraftOutput).substring(0, 100),
-        availableBrands_type: typeof availableBrands,
-        availableBrands_val: availableBrands
-      });
-      
-      // Validate geminiDraftOutput
-      if (!geminiDraftOutput || typeof geminiDraftOutput !== 'string') {
-        throw new Error(`Invalid geminiDraftOutput: ${typeof geminiDraftOutput}`);
-      }
-      
-      const brandsJson = JSON.stringify(availableBrands || []);
-      const sizesJson = JSON.stringify(availableSizes || ['2ml', '5ml', '10ml', '30ml', '50ml', '75ml', '100ml', '125ml', '150ml']);
-      const geminiPrompt = `
-You are an elite luxury perfume editor and JSON formatter.
-You are given the following draft profile of a perfume and market analysis reports generated in the previous stage:
+      // Helper: in-memory fuzzy match (không cần query DB thêm)
+      const normStr = (s: string) =>
+        s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 
---- DRAFT PROFILE & REPORTS FROM GEMINI 3.1 FLASH LITE ---
-${geminiDraftOutput}
----------------------------------------------
-
-YOUR STRICT ASSIGNMENT:
-1. Fact-check the draft: Ensure the selected brand strictly belongs to the database brands list: ${brandsJson}. Do NOT output any brand name outside this list under any circumstances!
-
-CRITICAL TAXONOMY SELECTION RULES (MUST FOLLOW EXACTLY):
-You MUST select values from the existing database lists below. DO NOT create new values.
-
-- **scentGroup**: MUST be EXACTLY ONE of these: ${JSON.stringify(availableScentGroups || [])}
-  * If the draft suggests a scent group not in this list, find the CLOSEST MATCH from the list
-  * Example: If draft says "Hương gỗ ấm áp" but list has "Hương gỗ", use "Hương gỗ"
-  * Example: If draft says "Fresh Citrus" but list has "Hương cam chanh", use "Hương cam chanh"
-  * NEVER create new scent groups
-
-- **concentration**: MUST be EXACTLY ONE of these: ${JSON.stringify(availableConcentrations || [])}
-  * If the draft suggests a concentration not in this list, find the CLOSEST MATCH from the list
-  * Example: If draft says "Eau de Parfum Intense" but list has "Eau de Parfum", use "Eau de Parfum"
-  * NEVER create new concentrations
-
-- **segment**: MUST be EXACTLY ONE of these: ${JSON.stringify(availableSegments || [])}
-  * If the draft suggests a segment not in this list, find the CLOSEST MATCH from the list
-  * Example: If draft says "Cao cấp sang trọng" but list has "Cao cấp", use "Cao cấp"
-  * NEVER create new segments
-
-- **gender**: MUST be EXACTLY ONE of these: ${JSON.stringify(availableGenders || [])}
-  * NO EXCEPTIONS - only use values from this list
-  * If draft says "Nam giới", use "Nam"
-  * If draft says "Nữ giới", use "Nữ"
-  * If draft says "Unisex/Nam nữ đều dùng được", use "Unisex"
-
-2. Scent Description: Ensure the "description" field is beautifully refined in Vietnamese and contains these three exact bold sections:
-   - **Mô tả hương thơm:**
-   - **Thông số kỹ thuật & Thuộc tính:**
-   - **Nguồn gốc & Chế độ bảo hành:**
-
-3. Pricing & Sizes:
-   - Round suggested prices to the nearest 10,000 VNĐ.
-   - CRITICAL SIZE RULE: You MUST ONLY use sizes from this exact list: ${sizesJson}
-   - DO NOT create new sizes like "90ml" or any size not in the system
-   - Read the draft capacity variants and their prices proposed in the draft. You MUST preserve ONLY the sizes that exist in the system list above (${sizesJson}). Format the "size" field strictly as a comma-separated list of "size:price" (e.g., "2ml:90000, 5ml:220000, 10ml:420000, 100ml:2900000"). 
-   - If the draft suggests a size not in the system list, replace it with the closest available size from the list.
-
-4. Detailed Analysis Reports (CRITICAL - MUST BE COMPREHENSIVE):
-   
-   **priceReport** - Phân tích chi tiết về giá sản phẩm (tiếng Việt, 300-500 từ):
-   - **1. Các tiêu chí cốt lõi để AI gợi ý giá:** Giải thích cách AI phân tích thương hiệu, độ hiếm, nồng độ hương, nguồn gốc nguyên liệu để đưa ra mức giá phù hợp
-   - **2. "Nguồn sản phẩm" đóng vai trò gì trong thuật toán:** Phân tích sự khác biệt giữa hàng chính hãng, parallel import, tester về giá và chất lượng
-   - **3. So sánh giá với các sản phẩm tương tự:** So sánh với 2-3 sản phẩm cùng phân khúc, giải thích tại sao giá này hợp lý
-   - **4. Dự đoán xu hướng giá:** Phân tích khả năng tăng/giảm giá trong 6-12 tháng tới dựa trên thị trường
-   
-   **sizeReport** - Phân tích chi tiết về dung tích (tiếng Việt, 300-500 từ):
-   - **1. Tại sao có nhiều dung tích khác nhau:** Giải thích chiến lược phân khúc khách hàng (thử nghiệm, sử dụng hàng ngày, sưu tầm)
-   - **2. Phân tích giá trị từng dung tích:** So sánh giá/ml của từng size, tư vấn size nào cost-effective nhất
-   - **3. Xu hướng tiêu dùng theo dung tích:** Phân tích size nào phổ biến nhất ở thị trường Việt Nam và tại sao
-   - **4. Khuyến nghị cho từng đối tượng:** Tư vấn size phù hợp cho người mới dùng, người sưu tầm, người dùng thường xuyên
-   
-   **discountReport** - Phân tích chi tiết về chiết khấu (tiếng Việt, 300-500 từ):
-   - **1. Cơ sở đưa ra mức chiết khấu:** Giải thích tại sao sản phẩm này được giảm giá X% (mùa vụ, thanh lý, khuyến mãi đặc biệt)
-   - **2. So sánh với các đợt sale trước:** Phân tích lịch sử giảm giá của thương hiệu/dòng sản phẩm này
-   - **3. Đánh giá mức độ hấp dẫn:** So sánh với mức giảm giá trung bình của thị trường (10-15% là bình thường, >20% là tốt)
-   - **4. Thời điểm tốt nhất để mua:** Tư vấn nên mua ngay hay chờ đợt sale lớn hơn (Black Friday, Tết, v.v.)
-
-5. Output STRICTLY a valid JSON object conforming to the schema below. Do NOT include markdown code block syntax (like \`\`\`json). Just the raw JSON object.
-
-JSON Schema:
-{
-  "brand": "Factually correct brand name strictly selected from the database brand list",
-  "tag": "MUST be EXACTLY ONE of these: ${JSON.stringify(availableTags || ['New', 'Sale', 'Trending', 'Limited', 'Standard'])}. Do NOT create new tags.",
-  "scentGroup": "Strictly selected from the database scent groups list",
-  "concentration": "Strictly selected from the database concentrations list",
-  "segment": "Strictly selected from the database segments list",
-  "gender": "Strictly selected from the gender list",
-  "description": "Poetic fragrance description with three bold sections in Vietnamese",
-  "price": number (rounded to nearest 10,000 VNĐ),
-  "size": "comma-separated list of capacity:price variants as analyzed in the sizeReport (e.g. '2ml:100000, 5ml:220000, 10ml:420000, 100ml:2900000')",
-  "discountPercentage": number (integer e.g., 10 or 15 or 20),
-  "priceReport": "Detailed price report in Vietnamese with bold section headers",
-  "sizeReport": "Detailed size report in Vietnamese with bold section headers",
-  "discountReport": "Detailed discount report in Vietnamese with bold section headers",
-  "metaTitle": "SEO title under 60 chars in Vietnamese",
-  "metaDescription": "SEO desc under 160 chars in Vietnamese",
-  "keywords": ["keyword 1", "keyword 2", "keyword 3"]
-}
-`;
-      console.log(`🔍 [AIController DEBUG] About to call generateResponse with geminiPrompt:`, {
-        type: typeof geminiPrompt,
-        isNull: geminiPrompt === null,
-        isUndefined: geminiPrompt === undefined,
-        isNaN: typeof geminiPrompt === 'number' && isNaN(geminiPrompt),
-        valueStr: String(geminiPrompt).substring(0, 100),
-        length: typeof geminiPrompt === 'string' ? geminiPrompt.length : 'N/A'
-      });
-
-      const response = await AIService.generateResponse(geminiPrompt, undefined, 'gemini-3.1-flash-lite');
-      let jsonString = response.trim();
-
-      if (jsonString.startsWith('```')) {
-        jsonString = jsonString.replace(/^```json\s*/i, '').replace(/```$/, '');
-      }
-
-      const productInfo = JSON.parse(jsonString.trim());
-
-      // Convert taxonomy strings to ObjectIds
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
-      
-      // Helper function to find best matching taxonomy (fuzzy match)
-      const findBestMatchTaxonomy = async (name: string, type: 'scent_group' | 'concentration' | 'segment') => {
-        // Lấy tất cả taxonomy của type này
-        const allTaxonomies = await ProductTaxonomy.find({ tenantId, type, status: 'active' }).lean();
-        
-        if (allTaxonomies.length === 0) {
-          console.warn(`⚠️ No ${type} found in database. Creating new one: ${name}`);
-          const slug = name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-          const newTaxonomy = await ProductTaxonomy.create({ tenantId, type, name, slug, status: 'active' });
-          return newTaxonomy._id;
-        }
-        
-        // Chuẩn hóa tên để so sánh
-        const normalizeName = (str: string) => str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-        const normalizedInput = normalizeName(name);
-        
-        // Tìm exact match trước
-        const exactMatch = allTaxonomies.find(t => normalizeName(t.name) === normalizedInput);
-        if (exactMatch) {
-          console.log(`✅ Exact match found for ${type}: "${name}" -> "${exactMatch.name}"`);
-          return exactMatch._id;
-        }
-        
-        // Nếu không có exact match, tìm partial match (contains)
-        const partialMatch = allTaxonomies.find(t => 
-          normalizeName(t.name).includes(normalizedInput) || 
-          normalizedInput.includes(normalizeName(t.name))
+      const findTaxonomy = (inputName: string, type: string) => {
+        const list = taxonomyByType[type] || [];
+        if (list.length === 0) return null;
+        const norm = normStr(inputName);
+        return (
+          list.find(t => normStr(t.name) === norm) ||
+          list.find(t => normStr(t.name).includes(norm) || norm.includes(normStr(t.name))) ||
+          list[0]
         );
-        
-        if (partialMatch) {
-          console.log(`⚠️ Partial match found for ${type}: "${name}" -> "${partialMatch.name}"`);
-          return partialMatch._id;
-        }
-        
-        // Nếu vẫn không tìm thấy, lấy taxonomy đầu tiên làm fallback
-        console.warn(`⚠️ No match found for ${type}: "${name}". Using first available: "${allTaxonomies[0].name}"`);
-        return allTaxonomies[0]._id;
       };
 
-      // Convert scentGroup string to scentGroups array of ObjectIds
-      if (productInfo.scentGroup && typeof productInfo.scentGroup === 'string') {
-        const names = productInfo.scentGroup.split(',').map((s: string) => s.trim()).filter(Boolean);
-        const matchedIds = await Promise.all(names.map((name: string) => findBestMatchTaxonomy(name, 'scent_group')));
-        productInfo.scentGroups = matchedIds;
-        
-        // Lấy lại tên để trả về cho frontend
-        const matchedTaxonomies = await ProductTaxonomy.find({ _id: { $in: matchedIds } }).lean();
-        productInfo.scentGroup = matchedTaxonomies.map(t => t.name).join(', ');
+      // ── OPTIMIZATION 2: Single-stage prompt (gộp Draft + Refine thành 1 call) ─
+      console.log(`🧠 [AI generateProduct] Single-stage generation with Gemini 3.1 Flash Lite for: ${name}`);
+
+      const singleStagePrompt = `
+You are an elite luxury perfume catalog AI. Generate a complete, production-ready JSON profile for the perfume named "${name}".
+
+AVAILABLE DATABASE VALUES (MUST use ONLY these — no exceptions):
+- Brands: ${JSON.stringify(availableBrands || [])}
+- Sizes: ${sizesJson}
+- Scent Groups: ${JSON.stringify(availableScentGroups || [])}
+- Concentrations: ${JSON.stringify(availableConcentrations || [])}
+- Segments: ${JSON.stringify(availableSegments || [])}
+- Genders: ${JSON.stringify(availableGenders || [])}
+- Tags: ${JSON.stringify(availableTags || ['New', 'Sale', 'Trending', 'Limited', 'Standard'])}
+
+RULES:
+1. Brand: Must match EXACTLY one entry from the Brands list. If uncertain, pick the closest match.
+2. Tag: Must be EXACTLY one from the Tags list.
+3. scentGroup / concentration / segment / gender: Must be EXACTLY one from each respective list.
+4. Sizes: Use ONLY sizes from the Sizes list. Format: "size:price" pairs separated by commas (e.g., "2ml:90000, 10ml:420000, 100ml:2900000"). Calculate prices proportionally.
+5. Price: Standard retail price in VNĐ, rounded to nearest 10,000.
+6. Description: Write in Vietnamese with EXACTLY these three bold headings:
+   - **Mô tả hương thơm:**
+   - **Thông số kỹ thuật & Thuộc tính:**
+   - **Nguồn gốc & Chế độ bảo hành:**
+7. Language: All text fields in Vietnamese. No Chinese characters allowed.
+8. priceReport (300-500 từ, tiếng Việt): Must include 4 sections:
+   - **1. Các tiêu chí cốt lõi để AI gợi ý giá:** (phân tích thương hiệu, độ hiếm, nồng độ, nguyên liệu)
+   - **2. "Nguồn sản phẩm" đóng vai trò gì:** (hàng chính hãng vs parallel import vs tester)
+   - **3. So sánh giá với sản phẩm tương tự:** (2-3 sản phẩm cùng phân khúc)
+   - **4. Dự đoán xu hướng giá 6-12 tháng tới:**
+9. sizeReport (300-500 từ, tiếng Việt): Must include 4 sections:
+   - **1. Tại sao có nhiều dung tích khác nhau:**
+   - **2. Phân tích giá trị từng dung tích:**
+   - **3. Xu hướng tiêu dùng theo dung tích tại Việt Nam:**
+   - **4. Khuyến nghị cho từng đối tượng:**
+10. discountReport (300-500 từ, tiếng Việt): Must include 4 sections:
+    - **1. Cơ sở đưa ra mức chiết khấu:**
+    - **2. So sánh với các đợt sale trước:**
+    - **3. Đánh giá mức độ hấp dẫn:**
+    - **4. Thời điểm tốt nhất để mua:**
+
+Output ONLY a raw valid JSON object. No markdown, no code blocks.
+
+{
+  "brand": "string from brand list",
+  "tag": "string from tag list",
+  "scentGroup": "string from scent group list",
+  "concentration": "string from concentration list",
+  "segment": "string from segment list",
+  "gender": "string from gender list",
+  "description": "Vietnamese description with 3 bold sections",
+  "price": number,
+  "size": "size:price, size:price, ...",
+  "discountPercentage": number,
+  "priceReport": "Vietnamese report ~400 words with 4 bold sections",
+  "sizeReport": "Vietnamese report ~400 words with 4 bold sections",
+  "discountReport": "Vietnamese report ~400 words with 4 bold sections",
+  "metaTitle": "SEO title under 60 chars in Vietnamese",
+  "metaDescription": "SEO desc under 160 chars in Vietnamese",
+  "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"]
+}
+`;
+
+      let jsonString = '';
+      try {
+        const raw = await AIService.generateResponse(singleStagePrompt, undefined, 'gemini-3.1-flash-lite');
+        jsonString = raw.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/, '').trim();
+      } catch (err: any) {
+        console.warn(`⚠️ [AI Retry] ${err.message}`);
+        const raw = await AIService.generateResponse(singleStagePrompt, undefined, 'gemini-3.1-flash-lite');
+        jsonString = raw.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/, '').trim();
       }
 
-      // Convert concentration string to concentrations array of ObjectIds
-      if (productInfo.concentration && typeof productInfo.concentration === 'string') {
-        const names = productInfo.concentration.split(',').map((s: string) => s.trim()).filter(Boolean);
-        const matchedIds = await Promise.all(names.map((name: string) => findBestMatchTaxonomy(name, 'concentration')));
-        productInfo.concentrations = matchedIds;
-        
-        // Lấy lại tên để trả về cho frontend
-        const matchedTaxonomies = await ProductTaxonomy.find({ _id: { $in: matchedIds } }).lean();
-        productInfo.concentration = matchedTaxonomies.map(t => t.name).join(', ');
+      const productInfo = JSON.parse(jsonString);
+
+      // ── OPTIMIZATION 3: Resolve taxonomy & tag song song (in-memory, 0 DB queries) ─
+      const [scentGroupResult, concentrationResult, segmentResult] = await Promise.all([
+        // scentGroup
+        Promise.resolve((() => {
+          if (!productInfo.scentGroup) return null;
+          const names = String(productInfo.scentGroup).split(',').map((s: string) => s.trim()).filter(Boolean);
+          return names.map((n: string) => findTaxonomy(n, 'scent_group')).filter(Boolean);
+        })()),
+        // concentration
+        Promise.resolve((() => {
+          if (!productInfo.concentration) return null;
+          const names = String(productInfo.concentration).split(',').map((s: string) => s.trim()).filter(Boolean);
+          return names.map((n: string) => findTaxonomy(n, 'concentration')).filter(Boolean);
+        })()),
+        // segment
+        Promise.resolve((() => {
+          if (!productInfo.segment) return null;
+          const names = String(productInfo.segment).split(',').map((s: string) => s.trim()).filter(Boolean);
+          return names.map((n: string) => findTaxonomy(n, 'segment')).filter(Boolean);
+        })())
+      ]);
+
+      if (scentGroupResult?.length) {
+        productInfo.scentGroups = scentGroupResult.map((t: any) => t._id);
+        productInfo.scentGroup = scentGroupResult.map((t: any) => t.name).join(', ');
+        console.log(`✅ scentGroup resolved: ${productInfo.scentGroup}`);
+      }
+      if (concentrationResult?.length) {
+        productInfo.concentrations = concentrationResult.map((t: any) => t._id);
+        productInfo.concentration = concentrationResult.map((t: any) => t.name).join(', ');
+        console.log(`✅ concentration resolved: ${productInfo.concentration}`);
+      }
+      if (segmentResult?.length) {
+        productInfo.segments = segmentResult.map((t: any) => t._id);
+        productInfo.segment = segmentResult.map((t: any) => t.name).join(', ');
+        console.log(`✅ segment resolved: ${productInfo.segment}`);
       }
 
-      // Convert segment string to segments array of ObjectIds
-      if (productInfo.segment && typeof productInfo.segment === 'string') {
-        const names = productInfo.segment.split(',').map((s: string) => s.trim()).filter(Boolean);
-        const matchedIds = await Promise.all(names.map((name: string) => findBestMatchTaxonomy(name, 'segment')));
-        productInfo.segments = matchedIds;
-        
-        // Lấy lại tên để trả về cho frontend
-        const matchedTaxonomies = await ProductTaxonomy.find({ _id: { $in: matchedIds } }).lean();
-        productInfo.segment = matchedTaxonomies.map(t => t.name).join(', ');
-      }
-
-      // Convert tag string to tag ObjectId (find matching tag from database)
-      if (productInfo.tag && typeof productInfo.tag === 'string') {
-        const tagName = productInfo.tag.trim();
-        
-        // Tìm tag trong database
-        const { Tag } = await import('../models/Tag.ts');
-        const allTags = await Tag.find({ tenantId, status: 'active' }).lean();
-        
-        if (allTags.length > 0) {
-          // Normalize để so sánh
-          const normalizeName = (str: string) => str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-          const normalizedInput = normalizeName(tagName);
-          
-          // Tìm exact match
-          let matchedTag = allTags.find(t => normalizeName(t.name) === normalizedInput);
-          
-          // Nếu không có exact match, tìm partial match
-          if (!matchedTag) {
-            matchedTag = allTags.find(t => 
-              normalizeName(t.name).includes(normalizedInput) || 
-              normalizedInput.includes(normalizeName(t.name))
-            );
-          }
-          
-          // Nếu vẫn không tìm thấy, dùng tag đầu tiên
-          if (!matchedTag) {
-            matchedTag = allTags[0];
-            console.warn(`⚠️ No match found for tag: "${tagName}". Using first available: "${matchedTag.name}"`);
-          } else {
-            console.log(`✅ Matched tag: "${tagName}" -> "${matchedTag.name}"`);
-          }
-          
-          // Lưu tag ObjectId và tên
-          productInfo.tags = [matchedTag._id];
-          productInfo.tag = matchedTag.name;
+      // Tag matching (in-memory)
+      if (productInfo.tag && allTags.length > 0) {
+        const norm = normStr(String(productInfo.tag));
+        const matched =
+          allTags.find(t => normStr(t.name) === norm) ||
+          allTags.find(t => normStr(t.name).includes(norm) || norm.includes(normStr(t.name))) ||
+          allTags[0];
+        if (matched) {
+          productInfo.tags = [matched._id];
+          productInfo.tag = matched.name;
+          console.log(`✅ tag resolved: ${matched.name}`);
         } else {
-          console.warn(`⚠️ No active tags found in database. Tag "${tagName}" will not be saved.`);
           delete productInfo.tag;
         }
       }
@@ -599,16 +468,16 @@ JSON Schema:
         'https://i.ibb.co/gH9dMN4/26689197.webp',
         'https://i.ibb.co/4wB9f8mn/Royal-Blue-Musk-scaled.webp'
       ];
-      // Keep preFilled.image if user has already uploaded one, otherwise pick a preset or allow empty/generation!
       productInfo.image = preFilled.image || presetImages[Math.floor(Math.random() * presetImages.length)];
 
-      console.log(`%c✨ [AI Workflow Stage 2] Gemini 3.1 Audit & Formatting Completed!`, 'color: green');
+      console.log(`✅ [AI generateProduct] Done in single stage for: ${name}`);
       return reply.status(200).send({ success: true, data: productInfo });
     } catch (error: any) {
       console.error('AI Product Generation Error:', error);
       return reply.status(500).send({ success: false, message: error.message });
     }
   }
+
 
   static async generateBrand(req: FastifyRequest, reply: FastifyReply) {
     try {

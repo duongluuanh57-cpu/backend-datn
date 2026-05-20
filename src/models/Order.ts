@@ -12,6 +12,7 @@ export interface IOrder extends Document {
   status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
   paymentMethod: 'cod' | 'bank_transfer' | 'credit_card' | 'momo' | 'zalopay';
   paymentStatus: 'unpaid' | 'paid' | 'refunded';
+  items: mongoose.Types.ObjectId[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -42,6 +43,7 @@ const OrderSchema = new Schema<IOrder>(
       default: 'unpaid',
       index: true,
     },
+    items: [{ type: Schema.Types.ObjectId, ref: 'OrderItem' }],
   },
   {
     timestamps: true,

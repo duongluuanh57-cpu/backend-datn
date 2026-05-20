@@ -30,23 +30,34 @@ function parseSizes(sizeStr: string): { size: string; price: number }[] {
 }
 
 // Helper to find or create taxonomy
-async function findOrCreateTaxonomy(
+// Find taxonomy by name (case-insensitive fuzzy match) - NEVER creates new entries
+async function findTaxonomyOnly(
   name: string,
   type: 'segment' | 'scent_group' | 'concentration',
   tenantId: string
-): Promise<any> {
-  const slug = slugify(name);
-  let taxonomy = await ProductTaxonomy.findOne({ tenantId, type, slug });
-  if (!taxonomy) {
-    taxonomy = await ProductTaxonomy.create({
-      tenantId,
-      type,
-      name,
-      slug,
-      status: 'active'
-    });
+): Promise<any | null> {
+  if (!name?.trim()) return null;
+  const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  const normalizedInput = norm(name);
+
+  // Exact match trước
+  const exactSlugMatch = await ProductTaxonomy.findOne({ tenantId, type, slug: slugify(name), status: 'active' });
+  if (exactSlugMatch) return exactSlugMatch._id;
+
+  // Case-insensitive name match
+  const allOfType = await ProductTaxonomy.find({ tenantId, type, status: 'active' }).lean();
+  const exactName = allOfType.find(t => norm(t.name) === normalizedInput);
+  if (exactName) return exactName._id;
+
+  // Partial match
+  const partial = allOfType.find(t => norm(t.name).includes(normalizedInput) || normalizedInput.includes(norm(t.name)));
+  if (partial) {
+    console.warn(`⚠️ [Taxonomy] Partial match "${name}" → "${partial.name}" (type: ${type})`);
+    return partial._id;
   }
-  return taxonomy._id;
+
+  console.warn(`⚠️ [Taxonomy] "${name}" (type: ${type}) not found in DB - skipping, will NOT create`);
+  return null;
 }
 
 export class ProductService {
@@ -191,7 +202,7 @@ export class ProductService {
       discountEndDate: { $gt: now }
     }).sort({ discountEndDate: 1 });
 
-    let productsRaw = [];
+    let productsRaw: any[] = [];
 
     if (upcomingSale && upcomingSale.discountEndDate) {
       const targetEndDate = upcomingSale.discountEndDate;
@@ -310,13 +321,15 @@ export class ProductService {
     if (data.discountEndDate !== undefined) updateData.discountEndDate = data.discountEndDate;
     if (data.keywords !== undefined) updateData.keywords = data.keywords;
 
-    // Brand mapping
+    // Brand mapping - chỉ tìm, KHÔNG tạo mới (case-insensitive)
     if (data.brand) {
-      let brandDoc = await Brand.findOne({ name: data.brand, tenantId });
-      if (!brandDoc) {
-        brandDoc = await Brand.create({ name: data.brand, status: 'active', tenantId });
+      const brandNameRegex = new RegExp(`^${data.brand.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+      const brandDoc = await Brand.findOne({ name: brandNameRegex, tenantId });
+      if (brandDoc) {
+        updateData.brandId = brandDoc._id;
+      } else {
+        console.warn(`⚠️ [Brand] "${data.brand}" not found in DB - skipping, will NOT create`);
       }
-      updateData.brandId = brandDoc._id;
     }
 
     // Tags mapping
@@ -334,32 +347,20 @@ export class ProductService {
       updateData.tags = tagIds;
     }
 
-    // Taxonomy mapping (scentGroup, concentration, segment)
+    // Taxonomy mapping - chỉ tìm trong DB, KHÔNG tạo mới
     if (data.scentGroup !== undefined) {
       const scentNames = data.scentGroup.split(',').map((s: string) => s.trim()).filter(Boolean);
-      const scentIds = [];
-      for (const name of scentNames) {
-        const id = await findOrCreateTaxonomy(name, 'scent_group', tenantId);
-        scentIds.push(id);
-      }
+      const scentIds = (await Promise.all(scentNames.map((n: string) => findTaxonomyOnly(n, 'scent_group', tenantId)))).filter(Boolean);
       updateData.scentGroups = scentIds;
     }
     if (data.concentration !== undefined) {
       const concNames = data.concentration.split(',').map((s: string) => s.trim()).filter(Boolean);
-      const concIds = [];
-      for (const name of concNames) {
-        const id = await findOrCreateTaxonomy(name, 'concentration', tenantId);
-        concIds.push(id);
-      }
+      const concIds = (await Promise.all(concNames.map((n: string) => findTaxonomyOnly(n, 'concentration', tenantId)))).filter(Boolean);
       updateData.concentrations = concIds;
     }
     if (data.segment !== undefined) {
       const segNames = data.segment.split(',').map((s: string) => s.trim()).filter(Boolean);
-      const segIds = [];
-      for (const name of segNames) {
-        const id = await findOrCreateTaxonomy(name, 'segment', tenantId);
-        segIds.push(id);
-      }
+      const segIds = (await Promise.all(segNames.map((n: string) => findTaxonomyOnly(n, 'segment', tenantId)))).filter(Boolean);
       updateData.segments = segIds;
     }
 
@@ -374,14 +375,14 @@ export class ProductService {
       const allImages = [];
       if (data.image) allImages.push(data.image);
       if (data.images && Array.isArray(data.images)) {
-        allImages.push(...data.images.filter(img => img !== data.image));
+        allImages.push(...data.images.filter((img: string) => img !== data.image));
       }
       if (allImages.length > 0) {
         await ProductImage.deleteMany({ productId: id, tenantId });
-        await ProductImage.insertMany(allImages.map(url => ({
+        await ProductImage.insertMany(allImages.map((img: string) => ({
           productId: id,
           tenantId,
-          url
+          url: img
         })));
       }
 
@@ -558,13 +559,15 @@ export class ProductService {
     if (data.discountEndDate !== undefined) productData.discountEndDate = data.discountEndDate;
     if (data.keywords !== undefined) productData.keywords = data.keywords;
 
-    // Brand mapping
+    // Brand mapping - chỉ tìm, KHÔNG tạo mới (case-insensitive)
     if (data.brand) {
-      let brandDoc = await Brand.findOne({ name: data.brand, tenantId });
-      if (!brandDoc) {
-        brandDoc = await Brand.create({ name: data.brand, status: 'active', tenantId });
+      const brandNameRegex = new RegExp(`^${data.brand.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+      const brandDoc = await Brand.findOne({ name: brandNameRegex, tenantId });
+      if (brandDoc) {
+        productData.brandId = brandDoc._id;
+      } else {
+        console.warn(`⚠️ [Brand] "${data.brand}" not found in DB - skipping, will NOT create`);
       }
-      productData.brandId = brandDoc._id;
     }
 
     // Tags mapping
@@ -582,32 +585,20 @@ export class ProductService {
       productData.tags = tagIds;
     }
 
-    // Taxonomy mapping
+    // Taxonomy mapping - chỉ tìm trong DB, KHÔNG tạo mới
     if (data.scentGroup) {
       const scentNames = data.scentGroup.split(',').map((s: string) => s.trim()).filter(Boolean);
-      const scentIds = [];
-      for (const name of scentNames) {
-        const id = await findOrCreateTaxonomy(name, 'scent_group', tenantId);
-        scentIds.push(id);
-      }
+      const scentIds = (await Promise.all(scentNames.map((n: string) => findTaxonomyOnly(n, 'scent_group', tenantId)))).filter(Boolean);
       productData.scentGroups = scentIds;
     }
     if (data.concentration) {
       const concNames = data.concentration.split(',').map((s: string) => s.trim()).filter(Boolean);
-      const concIds = [];
-      for (const name of concNames) {
-        const id = await findOrCreateTaxonomy(name, 'concentration', tenantId);
-        concIds.push(id);
-      }
+      const concIds = (await Promise.all(concNames.map((n: string) => findTaxonomyOnly(n, 'concentration', tenantId)))).filter(Boolean);
       productData.concentrations = concIds;
     }
     if (data.segment) {
       const segNames = data.segment.split(',').map((s: string) => s.trim()).filter(Boolean);
-      const segIds = [];
-      for (const name of segNames) {
-        const id = await findOrCreateTaxonomy(name, 'segment', tenantId);
-        segIds.push(id);
-      }
+      const segIds = (await Promise.all(segNames.map((n: string) => findTaxonomyOnly(n, 'segment', tenantId)))).filter(Boolean);
       productData.segments = segIds;
     }
 
@@ -632,13 +623,13 @@ export class ProductService {
     }
 
     // Images mapping
-    const allImages = [];
+    const allImages: string[] = [];
     if (data.image) allImages.push(data.image);
     if (data.images && Array.isArray(data.images)) {
-      allImages.push(...data.images.filter(img => img !== data.image));
+      allImages.push(...data.images.filter((img: string) => img !== data.image));
     }
     if (allImages.length > 0) {
-      await ProductImage.insertMany(allImages.map(url => ({
+      await ProductImage.insertMany(allImages.map((url: string) => ({
         productId: saved._id,
         tenantId,
         url

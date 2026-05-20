@@ -128,8 +128,13 @@ export function buildApp(): FastifyInstance {
     return reply.status(httpStatus).send(body);
   });
 
-  // Ping route - Trả về 200 ngay lập tức để đánh thức Render siêu nhanh
+  // Ping route - Trả về 200 chỉ khi MongoDB đã kết nối sẵn sàng
   app.get('/ping', async (request, reply) => {
+    const mongoose = await import('mongoose');
+    const isDbReady = mongoose.default.connection.readyState === 1;
+    if (!isDbReady) {
+      return reply.status(503).send({ status: 'warming_up', timestamp: new Date().toISOString() });
+    }
     return reply.status(200).send({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
