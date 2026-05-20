@@ -23,6 +23,7 @@ import { segmentRoutes } from './routes/segment.routes.ts'; // DEPRECATED — ke
 import { orderRoutes } from './routes/order.routes.ts';
 import { taxonomyRoutes } from './routes/taxonomy.routes.ts';
 import { userAddressRoutes } from './routes/user-address.routes.ts';
+import { homepageConfigRoutes } from './routes/homepage.routes.ts';
 import rawBody from 'fastify-raw-body';
 import corePlugin from './plugins/core.ts';
 import { errorHandler } from './middleware/errorHandler.ts';
@@ -105,6 +106,7 @@ export function buildApp(): FastifyInstance {
   app.register(segmentRoutes, { prefix: '/api/segments' });
   app.register(orderRoutes, { prefix: '/api/orders' });
   app.register(userAddressRoutes, { prefix: '/api/user-addresses' });
+  app.register(homepageConfigRoutes, { prefix: '/api/homepage-config' });
 
   // Global Error Handler
   app.setErrorHandler(errorHandler);

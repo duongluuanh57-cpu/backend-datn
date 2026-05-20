@@ -395,7 +395,7 @@ export class ProductService {
             tenantId,
             size: item.size,
             price: item.price,
-            quantityInStock: data.quantityInStock || 0,
+            quantityInStock: index === 0 ? (data.quantityInStock || 0) : 0,
             isDefault: index === 0,
             sortOrder: index
           }));
@@ -623,7 +623,7 @@ export class ProductService {
           tenantId,
           size: item.size,
           price: item.price,
-          quantityInStock: data.quantityInStock || 0,
+          quantityInStock: index === 0 ? (data.quantityInStock || 0) : 0,
           isDefault: index === 0,
           sortOrder: index
         }));
