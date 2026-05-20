@@ -6,7 +6,7 @@ import { EmailService } from '../services/EmailService.ts';
  */
 export class JobController {
   /**
-   * Xử lý ví dụ: Gửi email chào mừng
+   * Gửi email chào mừng sau khi đăng ký
    * POST /api/jobs/welcome-email
    */
   static async handleWelcomeEmail(request: FastifyRequest, reply: FastifyReply) {
@@ -14,20 +14,32 @@ export class JobController {
     
     request.log.info(`[Job] Đang xử lý gửi email chào mừng cho user: ${userId} (${email})`);
     
-    // Thực hiện gửi mail thật qua Resend
     await EmailService.sendWelcomeEmail(email, name || 'Bạn');
-    
-    return reply.send({ success: true, message: 'Email sent successfully via Resend' });
+
+    // Đánh dấu job đã xử lý thành công trong Redis (chống QStash retry gửi trùng)
+    const messageId = (request as any).qstashMessageId;
+    if (messageId) {
+      await request.server.redis.set(`qstash:processed:${messageId}`, '1', 'EX', 86400); // TTL 24h
+    }
+
+    request.log.info(`[Job] ✅ Gửi email chào mừng thành công cho: ${email}`);
+    return reply.send({ success: true, message: 'Welcome email sent successfully' });
   }
 
   /**
-   * Xử lý ví dụ: Tổng hợp báo cáo hàng ngày (Cron)
+   * Dọn dẹp dữ liệu định kỳ (Cron Job)
    * POST /api/jobs/daily-cleanup
    */
   static async handleDailyCleanup(request: FastifyRequest, reply: FastifyReply) {
     request.log.info('[Cron Job] Đang thực hiện dọn dẹp dữ liệu định kỳ...');
     
     // Logic dọn dẹp ở đây...
+
+    // Đánh dấu job đã xử lý xong
+    const messageId = (request as any).qstashMessageId;
+    if (messageId) {
+      await request.server.redis.set(`qstash:processed:${messageId}`, '1', 'EX', 86400);
+    }
     
     return reply.send({ success: true, message: 'Cleanup completed' });
   }
