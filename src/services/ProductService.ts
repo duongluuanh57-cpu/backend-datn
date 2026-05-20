@@ -6,6 +6,7 @@ import { Tag } from '../models/Tag.ts';
 import { ProductImage } from '../models/ProductImage.ts';
 import { ProductVariant } from '../models/ProductVariant.ts';
 import { ProductTaxonomy } from '../models/ProductTaxonomy.ts';
+import { ImageService } from './ImageService.ts';
 
 // Helper slugification
 function slugify(text: string): string {
@@ -90,9 +91,9 @@ export class ProductService {
         ...product,
         brand: (product.brandId as any)?.name || '',
         image: productImages[0] || '',
-        images: productImages,
+        images: productImages.slice(1),
         size: productVariants.join(', '),
-        tag: (product.tags as any[])?.map(t => t.name).join(', ') || '',
+        tag: (product.tags as any[])?.map(t => t.slug).join(', ') || '',
         quantityInStock: variants
           .filter(v => v.productId.toString() === pId)
           .reduce((sum, v) => sum + (v.quantityInStock || 0), 0) || product.quantityInStock
@@ -281,9 +282,9 @@ export class ProductService {
       ...product,
       brand: (product.brandId as any)?.name || '',
       image: images[0]?.url || '',
-      images: images.map(img => img.url),
+      images: images.slice(1).map(img => img.url),
       size: variants.map(v => `${v.size}:${v.price}`).join(', '),
-      tag: (product.tags as any[])?.map(t => t.name).join(', ') || '',
+      tag: (product.tags as any[])?.map(t => t.slug).join(', ') || '',
       scentGroup: (product.scentGroups as any[])?.map(s => s.name).join(', ') || '',
       concentration: (product.concentrations as any[])?.map(c => c.name).join(', ') || '',
       segment: (product.segments as any[])?.map(s => s.name).join(', ') || '',
@@ -449,11 +450,34 @@ export class ProductService {
     const product = await Product.findOne({ _id: id, tenantId });
     if (!product) return false;
 
+    // Fetch images before deletion from DB
+    const images = await ProductImage.find({ productId: id, tenantId }).lean();
+
     const result = await Product.deleteOne({ _id: id, tenantId });
     if (result.deletedCount > 0) {
       // Clean normalized collections
       await ProductImage.deleteMany({ productId: id, tenantId });
       await ProductVariant.deleteMany({ productId: id, tenantId });
+
+      // Delete images and virtual folder from R2
+      const foldersToDelete = new Set<string>();
+      for (const img of images) {
+        ImageService.deleteFromR2(img.url).catch(err => {
+          console.error('Lỗi khi xóa ảnh khỏi R2 trong deleteProduct:', err);
+        });
+        const folder = ImageService.getFolderFromUrl(img.url);
+        if (folder) {
+          foldersToDelete.add(folder);
+        }
+      }
+      if (product.name) {
+        foldersToDelete.add(`products/${slugify(product.name)}`);
+      }
+      for (const folder of foldersToDelete) {
+        ImageService.deleteFolderFromR2(folder).catch(err => {
+          console.error('Lỗi khi xóa folder trên R2 trong deleteProduct:', err);
+        });
+      }
 
       try {
         await redis.del(`products:new:tag:${tenantId}`);
@@ -472,11 +496,37 @@ export class ProductService {
   static async bulkDeleteProducts(ids: string[], tenantId: string): Promise<boolean> {
     if (!ids || ids.length === 0) return false;
     
+    // Fetch products and images before deletion from DB
+    const products = await Product.find({ _id: { $in: ids }, tenantId }).lean();
+    const images = await ProductImage.find({ productId: { $in: ids }, tenantId }).lean();
+    
     const result = await Product.deleteMany({ _id: { $in: ids }, tenantId });
     if (result.deletedCount > 0) {
       // Clean normalized collections in bulk
       await ProductImage.deleteMany({ productId: { $in: ids }, tenantId });
       await ProductVariant.deleteMany({ productId: { $in: ids }, tenantId });
+
+      // Delete images and virtual folders from R2
+      const foldersToDelete = new Set<string>();
+      for (const img of images) {
+        ImageService.deleteFromR2(img.url).catch(err => {
+          console.error('Lỗi khi xóa ảnh khỏi R2 trong bulkDeleteProducts:', err);
+        });
+        const folder = ImageService.getFolderFromUrl(img.url);
+        if (folder) {
+          foldersToDelete.add(folder);
+        }
+      }
+      for (const p of products) {
+        if (p.name) {
+          foldersToDelete.add(`products/${slugify(p.name)}`);
+        }
+      }
+      for (const folder of foldersToDelete) {
+        ImageService.deleteFolderFromR2(folder).catch(err => {
+          console.error('Lỗi khi xóa folder trên R2 trong bulkDeleteProducts:', err);
+        });
+      }
 
       try {
         await redis.del(`products:new:tag:${tenantId}`);

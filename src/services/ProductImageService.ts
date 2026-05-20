@@ -103,9 +103,19 @@ export class ProductImageService {
 
     // Xóa tất cả files khỏi R2
     if (result.deletedCount > 0) {
+      const foldersToDelete = new Set<string>();
       for (const image of images) {
         ImageService.deleteFromR2(image.url).catch(err => {
           console.error('Lỗi khi xóa ảnh khỏi R2:', err);
+        });
+        const folder = ImageService.getFolderFromUrl(image.url);
+        if (folder) {
+          foldersToDelete.add(folder);
+        }
+      }
+      for (const folder of foldersToDelete) {
+        ImageService.deleteFolderFromR2(folder).catch(err => {
+          console.error('Lỗi khi xóa folder trên R2:', err);
         });
       }
     }
@@ -133,9 +143,19 @@ export class ProductImageService {
 
     // Xóa tất cả files khỏi R2
     if (result.deletedCount > 0) {
+      const foldersToDelete = new Set<string>();
       for (const image of images) {
         ImageService.deleteFromR2(image.url).catch(err => {
           console.error('Lỗi khi xóa ảnh khỏi R2 trong bulk delete:', err);
+        });
+        const folder = ImageService.getFolderFromUrl(image.url);
+        if (folder) {
+          foldersToDelete.add(folder);
+        }
+      }
+      for (const folder of foldersToDelete) {
+        ImageService.deleteFolderFromR2(folder).catch(err => {
+          console.error('Lỗi khi xóa folder trên R2 trong bulk delete:', err);
         });
       }
     }
