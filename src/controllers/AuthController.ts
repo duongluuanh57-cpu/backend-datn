@@ -133,7 +133,9 @@ export class AuthController {
         username?: string;
         email?: string;
         avatar?: string;
-        // fullName, gender, phoneNumber → use PATCH /api/user-addresses/:id instead
+        fullName?: string;
+        phoneNumber?: string;
+        gender?: string;
       };
       const userId = (request as any).user?.userId;
       if (!userId) throw new UnauthorizedError('Vui lòng đăng nhập');
@@ -162,8 +164,10 @@ export class AuthController {
         updateData.email = trimmedEmail;
       }
 
-      if (body.avatar !== undefined) updateData.avatar = body.avatar.trim();
-      // fullName, gender, phoneNumber, address, province, district → use PATCH /api/user-addresses/:id instead
+      if (body.avatar !== undefined && body.avatar.trim()) updateData.avatar = body.avatar.trim();
+      if (body.fullName !== undefined) updateData.fullName = body.fullName.trim();
+      if (body.phoneNumber !== undefined) updateData.phoneNumber = body.phoneNumber.trim();
+      if (body.gender !== undefined) updateData.gender = body.gender;
 
       if (Object.keys(updateData).length === 0) {
         return reply.status(400).send({ success: false, message: 'Không có thông tin nào để cập nhật' });

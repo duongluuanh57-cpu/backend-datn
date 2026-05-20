@@ -116,7 +116,7 @@ export class ProductService {
    * Lấy danh sách sản phẩm mới nhất
    */
   static async getNewProducts(tenantId: string): Promise<any[]> {
-    const cacheKey = `products:new:tag:${tenantId}`;
+    const cacheKey = `products:new:tag:v2:${tenantId}`;
     
     // 1. Thử lấy từ Cache Redis
     try {
@@ -145,7 +145,6 @@ export class ProductService {
       .populate('brandId')
       .populate('tags')
       .sort({ createdAt: -1 })
-      .limit(4)
       .lean();
 
     const products = await this.formatMultipleProducts(productsRaw, tenantId);

@@ -10,6 +10,19 @@ export async function mediaRoutes(app: FastifyInstance) {
   });
 
   app.post(
+    '/upload-r2',
+    {
+      config: {
+        rateLimit: {
+          max: 20,
+          timeWindow: '1 minute'
+        }
+      }
+    },
+    MediaController.uploadR2
+  );
+
+  app.post(
     '/upload-imgbb',
     {
       config: {
@@ -19,7 +32,7 @@ export async function mediaRoutes(app: FastifyInstance) {
         }
       }
     },
-    MediaController.uploadImgbb
+    MediaController.uploadR2
   );
 
   app.post(

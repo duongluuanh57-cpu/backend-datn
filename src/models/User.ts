@@ -12,8 +12,12 @@ export interface IUser extends Document {
   status: 'active' | 'inactive' | 'suspended'; // Trạng thái tài khoản
   twoFactorSecret?: string;
   twoFactorEnabled: boolean;
-  // Personal info moved to UserAddress model (user_addresses collection)
-  // Address info moved to UserAddress model (user_addresses collection)
+  fullName?: string;
+  phoneNumber?: string;
+  gender?: 'MALE' | 'FEMALE' | 'OTHER' | '';
+  address?: string;
+  province?: string;
+  district?: string;
   // OAuth fields
   oauthProvider?: 'google' | 'github';  // Provider đăng nhập OAuth
   oauthId?: string;                      // ID từ provider
@@ -33,7 +37,12 @@ const UserSchema = new Schema<IUser>(
     status: { type: String, enum: ['active', 'inactive', 'suspended'], default: 'active', index: true }, // Trạng thái tài khoản
     twoFactorSecret: { type: String },
     twoFactorEnabled: { type: Boolean, default: false },
-    // fullName, gender, phoneNumber, address, province, district → moved to user_addresses collection
+    fullName: { type: String, default: '' },
+    phoneNumber: { type: String, default: '' },
+    gender: { type: String, enum: ['MALE', 'FEMALE', 'OTHER', ''], default: '' },
+    address: { type: String, default: '' },
+    province: { type: String, default: '' },
+    district: { type: String, default: '' },
     oauthProvider: { type: String, enum: ['google', 'github'], index: true },
     oauthId: { type: String, index: true },
     avatar: { type: String },

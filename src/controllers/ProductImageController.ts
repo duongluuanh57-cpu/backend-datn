@@ -113,7 +113,7 @@ export class ProductImageController {
         return reply.status(400).send({
           success: false,
           message: 'Dữ liệu không hợp lệ',
-          errors: error.errors
+          errors: (error as any).errors
         });
       }
       console.error('Error adding product image:', error);
@@ -148,7 +148,7 @@ export class ProductImageController {
         return reply.status(400).send({
           success: false,
           message: 'Dữ liệu không hợp lệ',
-          errors: error.errors
+          errors: (error as any).errors
         });
       }
       console.error('Error adding multiple images:', error);

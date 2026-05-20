@@ -1,4 +1,4 @@
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -11,7 +11,7 @@ class RedisService {
   constructor() {
     this.client = new Redis(REDIS_URL);
     
-    this.client.on('error', (err) => {
+    this.client.on('error', (err: any) => {
       console.error('❌ [Redis Error]:', err);
     });
 

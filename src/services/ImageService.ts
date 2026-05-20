@@ -265,25 +265,25 @@ export class ImageService {
       let totalDeleted = 0;
 
       while (isTruncated) {
-        const listCommand = new ListObjectsV2Command({
+        const listCommand: ListObjectsV2Command = new ListObjectsV2Command({
           Bucket: bucketName,
           Prefix: prefix,
           ContinuationToken: continuationToken,
         });
 
-        const listResponse = await client.send(listCommand);
+        const listResponse = (await client.send(listCommand)) as any;
         const objects = listResponse.Contents || [];
 
         if (objects.length > 0) {
           const keysToDelete = objects
-            .map(obj => obj.Key)
-            .filter((key): key is string => !!key);
+            .map((obj: any) => obj.Key)
+            .filter((key: any): key is string => !!key);
 
           if (keysToDelete.length > 0) {
             const deleteCommand = new DeleteObjectsCommand({
               Bucket: bucketName,
               Delete: {
-                Objects: keysToDelete.map(key => ({ Key: key })),
+                Objects: keysToDelete.map((key: string) => ({ Key: key })),
                 Quiet: true,
               },
             });

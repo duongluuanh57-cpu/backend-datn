@@ -14,9 +14,10 @@ export class SupportService {
     console.log(`🤖 [Support] Nhận câu hỏi: "${query}" (Tenant: ${tenantId})`);
 
     // 1. Tìm ngữ cảnh sản phẩm (Hybrid Search - RAG)
-    const contextDocs = await SearchService.hybridSearch(query, tenantId, 3);
-    const context = contextDocs.length > 0 
-      ? contextDocs.map(doc => `[Tiêu đề: ${doc.title}]: ${doc.body}`).join('\n\n')
+    const searchResult = await SearchService.hybridSearch(query, tenantId, 3);
+    const products = searchResult.products || [];
+    const context = products.length > 0 
+      ? products.map(p => `[Sản phẩm: ${p.name}] - Thương hiệu: ${p.brand || "L'essence"} - Mô tả: ${p.description || ""}`).join('\n\n')
       : "Không tìm thấy thông tin cụ thể trong tài liệu sản phẩm.";
 
     // 2. Chạy luồng Agent đa tác nhân (LangGraph) để tổng hợp câu trả lời
@@ -39,7 +40,7 @@ export class SupportService {
     // 3. Đánh giá độ tin cậy bằng EvalService (LLM-as-a-Judge)
     // Chỉ đánh giá khi có ngữ cảnh (để tránh đánh giá sai các câu hỏi xã giao)
     let evaluation = { score: 5, reason: 'N/A' };
-    if (contextDocs.length > 0) {
+    if (products.length > 0) {
       evaluation = await EvalService.evaluateFaithfulness(query, context, response);
       console.log(`📊 [AI Eval] Score: ${evaluation.score}/5 - Lý do: ${evaluation.reason}`);
     }
@@ -49,7 +50,7 @@ export class SupportService {
       metadata: {
         evalScore: evaluation.score,
         evalReason: evaluation.reason,
-        hasContext: contextDocs.length > 0,
+        hasContext: products.length > 0,
         isReliable: evaluation.score >= 4
       }
     };

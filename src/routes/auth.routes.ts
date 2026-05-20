@@ -67,7 +67,8 @@ export async function authRoutes(app: FastifyInstance) {
         gender: z.enum(['MALE', 'FEMALE', 'OTHER', '']).optional(),
         address: z.string().max(200).optional(),
         province: z.string().max(100).optional(),
-        district: z.string().max(100).optional()
+        district: z.string().max(100).optional(),
+        avatar: z.string().optional()
       })
     }
   }, AuthController.updateProfile);

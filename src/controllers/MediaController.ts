@@ -9,9 +9,9 @@ function clampInt(value: unknown, fallback: number, min: number, max: number): n
 
 export class MediaController {
   /**
-   * POST /api/media/upload-imgbb — multipart: field `image` (file), optional `maxWidth`, `quality`, `folder`
+   * POST /api/media/upload-r2 — multipart: field `image` (file), optional `maxWidth`, `quality`, `folder`
    */
-  static async uploadImgbb(req: FastifyRequest, reply: FastifyReply) {
+  static async uploadR2(req: FastifyRequest, reply: FastifyReply) {
     try {
       let fileBuffer: Buffer | null = null;
       let filename = 'upload';

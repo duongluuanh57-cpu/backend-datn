@@ -1,6 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { AIController } from '../controllers/AIController.ts';
+import { AIChatController } from '../controllers/AIChatController.ts';
+import { AICatalogController } from '../controllers/AICatalogController.ts';
+import { AIVisionController } from '../controllers/AIVisionController.ts';
+import { AICoreController } from '../controllers/AICoreController.ts';
 import { AIPromptSchema, AIGenerateNameSchema } from '../types/feature.types.ts';
 
 export async function aiRoutes(app: FastifyInstance) {
@@ -17,7 +20,7 @@ export async function aiRoutes(app: FastifyInstance) {
         timeWindow: '1 minute'
       }
     },
-    handler: AIController.generate,
+    handler: AICoreController.generate,
   });
 
   // POST /api/ai/generate-product - AI tự động viết thông tin sản phẩm và tự động điền form
@@ -25,7 +28,7 @@ export async function aiRoutes(app: FastifyInstance) {
     schema: {
       body: AIGenerateNameSchema,
     },
-    handler: AIController.generateProduct,
+    handler: AICatalogController.generateProduct,
   });
 
   // POST /api/ai/generate-brand - AI tự động viết câu chuyện thương hiệu và tự động điền form
@@ -33,7 +36,7 @@ export async function aiRoutes(app: FastifyInstance) {
     schema: {
       body: AIGenerateNameSchema,
     },
-    handler: AIController.generateBrand,
+    handler: AICatalogController.generateBrand,
   });
 
   // POST /api/ai/agent/run - Skill 13
@@ -41,7 +44,7 @@ export async function aiRoutes(app: FastifyInstance) {
     schema: {
       body: AIPromptSchema,
     },
-    handler: AIController.runAgent,
+    handler: AICoreController.runAgent,
   });
 
   // POST /api/ai/support/chat - Hỗ trợ khách hàng đa tác nhân + Eval
@@ -49,31 +52,31 @@ export async function aiRoutes(app: FastifyInstance) {
     schema: {
       body: AIPromptSchema,
     },
-    handler: AIController.supportChat,
+    handler: AIChatController.supportChat,
   });
 
   // POST /api/ai/chat - Streaming Vercel AI SDK
   server.post('/chat', {
-    handler: AIController.chatStream,
+    handler: AIChatController.chatStream,
   });
 
   // POST /api/ai/autocomplete - Gợi ý tự động hoàn thành thời gian thực
   server.post('/autocomplete', {
-    handler: AIController.autocomplete,
+    handler: AICatalogController.autocomplete,
   });
 
   // POST /api/ai/suggest-price - Gợi ý giá thị trường + % cộng thêm
   server.post('/suggest-price', {
-    handler: AIController.suggestPrice,
+    handler: AICatalogController.suggestPrice,
   });
 
   // POST /api/ai/feedback - Nhận đánh giá sao từ user, AI tự điều chỉnh và stream phản hồi
   server.post('/feedback', {
-    handler: AIController.handleFeedback,
+    handler: AIChatController.handleFeedback,
   });
 
   // POST /api/ai/scan-gallery-image - AI quét ảnh và tự động điền tiêu đề và câu trích dẫn song ngữ
   server.post('/scan-gallery-image', {
-    handler: AIController.scanGalleryImage,
+    handler: AIVisionController.scanGalleryImage,
   });
 }
