@@ -210,30 +210,8 @@ export class ProductService {
         .limit(4)
         .lean();
     } else {
-      // Nếu không có sản phẩm nào có hạn giảm giá tương lai, lấy các sản phẩm giảm giá vô thời hạn (null hoặc không có hạn)
-      productsRaw = await Product.find({
-        ...queryBase,
-        $and: [
-          {
-            $or: [
-              { discountStartDate: null },
-              { discountStartDate: { $exists: false } },
-              { discountStartDate: { $lte: now } }
-            ]
-          },
-          {
-            $or: [
-              { discountEndDate: null },
-              { discountEndDate: { $exists: false } }
-            ]
-          }
-        ]
-      })
-        .populate('brandId')
-        .populate('tags')
-        .sort({ createdAt: -1 })
-        .limit(4)
-        .lean();
+      // Nếu không có sản phẩm nào có hạn giảm giá tương lai, trả về danh sách rỗng
+      productsRaw = [];
     }
 
     const products = await this.formatMultipleProducts(productsRaw, tenantId);
@@ -270,12 +248,34 @@ export class ProductService {
     const product = await Product.findOne({ _id: id, tenantId })
       .populate('brandId')
       .populate('tags')
+      .populate('scentGroups')
+      .populate('concentrations')
+      .populate('segments')
       .lean();
     
     if (!product) return null;
 
     const images = await ProductImage.find({ productId: id, tenantId }).lean();
     const variants = await ProductVariant.find({ productId: id, tenantId }).sort({ sortOrder: 1 }).lean();
+
+    // Fetch SEO and AI reports from ProductSEO
+    let seoData: any = {};
+    try {
+      const { ProductSEO } = await import('../models/ProductSEO.ts');
+      const seoDoc = await ProductSEO.findOne({ productId: id, tenantId }).lean();
+      if (seoDoc) {
+        seoData = {
+          metaTitle: seoDoc.metaTitle || '',
+          metaDescription: seoDoc.metaDescription || '',
+          keywords: seoDoc.keywords || [],
+          priceReport: seoDoc.priceReport || '',
+          sizeReport: seoDoc.sizeReport || '',
+          discountReport: seoDoc.discountReport || '',
+        };
+      }
+    } catch (err) {
+      console.error('Failed to fetch ProductSEO in getProductById:', err);
+    }
 
     return {
       ...product,
@@ -284,7 +284,11 @@ export class ProductService {
       images: images.map(img => img.url),
       size: variants.map(v => `${v.size}:${v.price}`).join(', '),
       tag: (product.tags as any[])?.map(t => t.name).join(', ') || '',
-      quantityInStock: variants.reduce((sum, v) => sum + (v.quantityInStock || 0), 0) || product.quantityInStock
+      scentGroup: (product.scentGroups as any[])?.map(s => s.name).join(', ') || '',
+      concentration: (product.concentrations as any[])?.map(c => c.name).join(', ') || '',
+      segment: (product.segments as any[])?.map(s => s.name).join(', ') || '',
+      quantityInStock: variants.reduce((sum, v) => sum + (v.quantityInStock || 0), 0) || product.quantityInStock,
+      ...seoData
     };
   }
 
@@ -396,6 +400,37 @@ export class ProductService {
           }));
           await ProductVariant.insertMany(variantsToInsert);
         }
+      }
+
+      // Sync ProductSEO
+      try {
+        const { ProductSEO } = await import('../models/ProductSEO.ts');
+        const seoData: any = {};
+        if (data.metaTitle !== undefined) seoData.metaTitle = data.metaTitle;
+        if (data.metaDescription !== undefined) seoData.metaDescription = data.metaDescription;
+        if (data.keywords !== undefined) {
+          seoData.keywords = Array.isArray(data.keywords)
+            ? data.keywords
+            : typeof data.keywords === 'string'
+            ? data.keywords.split(',').map((k: string) => k.trim()).filter(Boolean)
+            : [];
+        }
+        if (data.priceReport !== undefined) seoData.priceReport = data.priceReport;
+        if (data.sizeReport !== undefined) seoData.sizeReport = data.sizeReport;
+        if (data.discountReport !== undefined) seoData.discountReport = data.discountReport;
+
+        if (Object.keys(seoData).length > 0) {
+          await ProductSEO.findOneAndUpdate(
+            { productId: id, tenantId },
+            { 
+              $set: seoData,
+              $setOnInsert: { productId: id, tenantId }
+            },
+            { upsert: true, new: true }
+          );
+        }
+      } catch (err) {
+        console.error('Failed to save ProductSEO in updateProduct:', err);
       }
 
       // Xóa các cache liên quan sau khi cập nhật
@@ -558,6 +593,34 @@ export class ProductService {
         tenantId,
         url
       })));
+    }
+
+    // Sync SEO and reports in ProductSEO collection
+    try {
+      const { ProductSEO } = await import('../models/ProductSEO.ts');
+      const keywordsArray = Array.isArray(data.keywords)
+        ? data.keywords
+        : typeof data.keywords === 'string'
+        ? data.keywords.split(',').map((k: string) => k.trim()).filter(Boolean)
+        : [];
+
+      await ProductSEO.findOneAndUpdate(
+        { productId: saved._id, tenantId },
+        {
+          $set: {
+            metaTitle: data.metaTitle,
+            metaDescription: data.metaDescription,
+            keywords: keywordsArray,
+            priceReport: data.priceReport,
+            sizeReport: data.sizeReport,
+            discountReport: data.discountReport,
+          },
+          $setOnInsert: { productId: saved._id, tenantId }
+        },
+        { upsert: true, new: true }
+      );
+    } catch (err) {
+      console.error('Failed to save ProductSEO in createProduct:', err);
     }
 
     // Clear Redis Cache so that the new product immediately shows up on the homepage/outside!
