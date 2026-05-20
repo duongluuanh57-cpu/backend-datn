@@ -53,7 +53,8 @@ export class HomepageConfigController {
             ...(body.bannerSubtitleEn !== undefined && { bannerSubtitleEn: body.bannerSubtitleEn }),
             ...(body.bannerLabelEn !== undefined && { bannerLabelEn: body.bannerLabelEn }),
             ...(body.galleryVi !== undefined && { galleryVi: body.galleryVi }),
-            ...(body.galleryEn !== undefined && { galleryEn: body.galleryEn })
+            ...(body.galleryEn !== undefined && { galleryEn: body.galleryEn }),
+            ...(body.productCardConfig !== undefined && { productCardConfig: body.productCardConfig })
           }
         },
         { new: true, upsert: true, runValidators: true }

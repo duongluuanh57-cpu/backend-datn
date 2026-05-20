@@ -7,6 +7,24 @@ export interface ISectionConfig {
   order: number;
 }
 
+export interface IProductCardConfig {
+  imageAspect: 'square' | 'portrait' | 'landscape';
+  imagePadding: number;
+  cardRadius: number;
+  tagBgColor: string;
+  tagTextColor: string;
+  discountBadgeBg: string;
+  discountBadgeText: string;
+  brandFontSize: number;
+  nameFontSize: number;
+  priceFontSize: number;
+  textAlign: 'center' | 'left';
+  elementOrder: string[];
+  showKeywords: boolean;
+  showSizes: boolean;
+  showRating: boolean;
+}
+
 export interface IGalleryImage {
   url: string;
   aspect: string;
@@ -26,6 +44,7 @@ export interface IHomepageConfig extends Document {
   bannerLabelEn: string;
   galleryVi: IGalleryImage[];
   galleryEn: IGalleryImage[];
+  productCardConfig: IProductCardConfig;
   updatedAt: Date;
 }
 
@@ -58,6 +77,30 @@ const DEFAULT_SECTIONS: ISectionConfig[] = [
   { id: 'blogPosts', enabled: true, order: 6 }
 ];
 
+const ProductCardConfigSchema = new Schema<IProductCardConfig>(
+  {
+    imageAspect: { type: String, enum: ['square', 'portrait', 'landscape'], default: 'square' },
+    imagePadding: { type: Number, default: 40 },
+    cardRadius: { type: Number, default: 16 },
+    tagBgColor: { type: String, default: '#FFFFFF' },
+    tagTextColor: { type: String, default: '#7A5C5C' },
+    discountBadgeBg: { type: String, default: '#D4A5A5' },
+    discountBadgeText: { type: String, default: '#FFFFFF' },
+    brandFontSize: { type: Number, default: 11 },
+    nameFontSize: { type: Number, default: 14 },
+    priceFontSize: { type: Number, default: 16 },
+    textAlign: { type: String, enum: ['center', 'left'], default: 'center' },
+    elementOrder: {
+      type: [String],
+      default: ['keywords', 'brand', 'name', 'sizes', 'rating', 'price']
+    },
+    showKeywords: { type: Boolean, default: true },
+    showSizes: { type: Boolean, default: true },
+    showRating: { type: Boolean, default: true }
+  },
+  { _id: false }
+);
+
 const HomepageConfigSchema = new Schema<IHomepageConfig>(
   {
     sections: {
@@ -88,7 +131,8 @@ const HomepageConfigSchema = new Schema<IHomepageConfig>(
     },
     bannerLabelEn: { type: String, default: 'PREMIUM FRAGRANCE HOUSE' },
     galleryVi: { type: [GalleryImageSchema], default: [] },
-    galleryEn: { type: [GalleryImageSchema], default: [] }
+    galleryEn: { type: [GalleryImageSchema], default: [] },
+    productCardConfig: { type: ProductCardConfigSchema, default: () => ({}) }
   },
   {
     timestamps: true,
