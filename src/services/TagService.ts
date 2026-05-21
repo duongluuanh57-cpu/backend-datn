@@ -6,12 +6,12 @@ function slugify(text: string): string {
     .toString()
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // remove accents
-    .replace(/\s+/g, '-') // replace spaces with -
-    .replace(/[^\w\-]+/g, '') // remove all non-word chars
-    .replace(/\-\-+/g, '-') // replace multiple - with single -
-    .replace(/^-+/, '') // trim - from start
-    .replace(/-+$/, ''); // trim - from end
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/[^\w\-]+/g, '')
+    .replace(/\-\-+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '');
 }
 
 export class TagService {
@@ -21,7 +21,7 @@ export class TagService {
   static async getAllTags(tenantId: string): Promise<ITag[]> {
     let tags = await Tag.find({ tenantId, status: 'active' }).sort({ name: 1 });
     if (tags.length === 0) {
-      console.log(`🌱 [Tag Seeding] Seeding default tags ('Giảm giá' and 'Sản phẩm mới') for tenant: ${tenantId}`);
+      console.log(`[Tag Seeding] Seeding default tags ('Sale', 'New', and 'Limited') for tenant: ${tenantId}`);
       try {
         const defaultTags = [
           {
@@ -35,12 +35,18 @@ export class TagService {
             slug: 'New',
             status: 'active',
             tenantId
+          },
+          {
+            name: 'Giới hạn',
+            slug: 'Limited',
+            status: 'active',
+            tenantId
           }
         ];
         await Tag.insertMany(defaultTags);
         tags = await Tag.find({ tenantId, status: 'active' }).sort({ name: 1 });
       } catch (err) {
-        console.error('❌ Error seeding default tags:', err);
+        console.error('Error seeding default tags:', err);
       }
     }
     return tags;
@@ -87,7 +93,7 @@ export class TagService {
   static async deleteTag(id: string, tenantId: string): Promise<boolean> {
     const tag = await Tag.findOne({ _id: id, tenantId });
     if (tag && (tag.slug === 'Sale' || tag.slug === 'New')) {
-      throw new Error('Không thể xóa tag hệ thống mặc định (Giảm giá và Sản phẩm mới)');
+      throw new Error('Cannot delete system tag (Sale / New)');
     }
     const result = await Tag.deleteOne({ _id: id, tenantId });
     return result.deletedCount > 0;

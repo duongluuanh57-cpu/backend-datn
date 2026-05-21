@@ -1,6 +1,7 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { AIService } from '../services/AIService.ts';
-import { ProductTaxonomy } from '../models/ProductTaxonomy.ts';
+import { TaxonomyTerm } from '../models/TaxonomyTerm.ts';
+import { Taxonomy } from '../models/Taxonomy.ts';
 import { Tag } from '../models/Tag.ts';
 import { redis } from '../config/redis.ts';
 
@@ -75,15 +76,18 @@ export class AICatalogController {
       // Thay vì query DB nhiều lần sau khi AI trả về → fetch 1 lần ngay từ đầu
       console.log(`🚀 [AI generateProduct] Pre-fetching taxonomies & tags in parallel for: ${name}`);
       const [allTaxonomies, allTags] = await Promise.all([
-        ProductTaxonomy.find({ tenantId, status: 'active' }).lean(),
+        // Lấy tất cả TaxonomyTerm mới, kèm taxonomyId để group theo slug
+        TaxonomyTerm.find({ tenantId, status: 'active' }).populate({ path: 'taxonomyId', model: 'Taxonomy', select: 'slug' }).lean(),
         Tag.find({ tenantId, status: 'active' }).lean()
       ]);
 
-      // Group taxonomies by type để O(1) lookup
+      // Group terms by taxonomy slug để O(1) lookup
       const taxonomyByType: Record<string, any[]> = {};
       for (const t of allTaxonomies) {
-        if (!taxonomyByType[t.type]) taxonomyByType[t.type] = [];
-        taxonomyByType[t.type].push(t);
+        const slug = (t.taxonomyId as any)?.slug;
+        if (!slug) continue;
+        if (!taxonomyByType[slug]) taxonomyByType[slug] = [];
+        taxonomyByType[slug].push(t);
       }
 
       // Helper: in-memory fuzzy match (không cần query DB thêm)
@@ -114,11 +118,11 @@ AVAILABLE DATABASE VALUES (MUST use ONLY these — no exceptions):
 - Concentrations: ${JSON.stringify(availableConcentrations || [])}
 - Segments: ${JSON.stringify(availableSegments || [])}
 - Genders: ${JSON.stringify(availableGenders || [])}
-- Tags: ${JSON.stringify(availableTags || ['New', 'Sale', 'Trending', 'Limited', 'Standard'])}
+- Tags (chọn 1 tag phụ, KHÔNG chọn "Standard" — tag Standard sẽ được tự động thêm): ${JSON.stringify((availableTags || ['New', 'Sale', 'Trending', 'Limited']).filter((t: string) => t.toLowerCase() !== 'standard'))}
 
 RULES:
 1. Brand: Must match EXACTLY one entry from the Brands list. If uncertain, pick the closest match.
-2. Tag: Must be EXACTLY one from the Tags list.
+2. Tag: Must be EXACTLY one from the Tags list above (do NOT pick "Standard" — it will be added automatically). Pick the most relevant tag for this product.
 3. scentGroup / concentration / segment / gender: Must be EXACTLY one from each respective list.
 4. Sizes: Use ONLY sizes from the Sizes list. Format: "size:price" pairs separated by commas (e.g., "2ml:90000, 10ml:420000, 100ml:2900000"). Calculate prices proportionally.
 5. Price: Standard retail price in VNĐ, rounded to nearest 10,000.
@@ -216,19 +220,39 @@ Output ONLY a raw valid JSON object. No markdown, no code blocks.
       }
 
       // Tag matching (in-memory)
+      // Logic: luôn có "Standard" tag + 1 tag AI chọn (tối đa 2 tag)
+      const standardTag = allTags.find(t => normStr(t.name) === 'standard');
+      const resolvedTagIds: any[] = [];
+      const resolvedTagNames: string[] = [];
+
+      // 1. Luôn thêm Standard tag trước
+      if (standardTag) {
+        resolvedTagIds.push(standardTag._id);
+        resolvedTagNames.push(standardTag.name);
+        console.log(`✅ Standard tag auto-added: ${standardTag.name}`);
+      }
+
+      // 2. AI chọn thêm 1 tag phụ (không phải Standard)
       if (productInfo.tag && allTags.length > 0) {
         const norm = normStr(String(productInfo.tag));
-        const matched =
-          allTags.find(t => normStr(t.name) === norm) ||
-          allTags.find(t => normStr(t.name).includes(norm) || norm.includes(normStr(t.name))) ||
-          allTags[0];
-        if (matched) {
-          productInfo.tags = [matched._id];
-          productInfo.tag = matched.name;
-          console.log(`✅ tag resolved: ${matched.name}`);
-        } else {
-          delete productInfo.tag;
+        // Bỏ qua nếu AI chọn Standard (đã có rồi)
+        if (norm !== 'standard') {
+          const matched =
+            allTags.find(t => normStr(t.name) === norm && normStr(t.name) !== 'standard') ||
+            allTags.find(t => (normStr(t.name).includes(norm) || norm.includes(normStr(t.name))) && normStr(t.name) !== 'standard');
+          if (matched) {
+            resolvedTagIds.push(matched._id);
+            resolvedTagNames.push(matched.name);
+            console.log(`✅ AI tag resolved: ${matched.name}`);
+          }
         }
+      }
+
+      if (resolvedTagIds.length > 0) {
+        productInfo.tags = resolvedTagIds;
+        productInfo.tag = resolvedTagNames.join(',');
+      } else {
+        delete productInfo.tag;
       }
 
       const presetImages = [

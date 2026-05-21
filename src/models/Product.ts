@@ -6,12 +6,11 @@ export interface IProduct extends Document {
   name: string;
   brandId: mongoose.Types.ObjectId; // Reference to Brand
   price: number; // Giá base (có thể là giá thấp nhất của variants)
+  variants?: mongoose.Types.ObjectId[]; // References to ProductVariant
 
   description: string;
-  tags?: mongoose.Types.ObjectId[]; // Array of references to Tag
-  scentGroups?: mongoose.Types.ObjectId[]; // Array of references to ProductTaxonomy
-  concentrations?: mongoose.Types.ObjectId[]; // Array of references to ProductTaxonomy
-  segments?: mongoose.Types.ObjectId[]; // Array of references to ProductTaxonomy
+  // tags đã được chuyển sang bảng trung gian ProductTag
+  // scentGroups, concentrations, segments đã được chuyển sang bảng trung gian ProductTaxonomyTerm
   gender?: string;
   rating?: number;
   reviewsCount?: number;
@@ -30,12 +29,10 @@ const ProductSchema = new Schema<IProduct>(
     name: { type: String, required: true, index: true },
     brandId: { type: Schema.Types.ObjectId, ref: 'Brand', required: true, index: true },
     price: { type: Number, required: true },
+    variants: [{ type: Schema.Types.ObjectId, ref: 'ProductVariant' }],
 
     description: { type: String },
-    tags: [{ type: Schema.Types.ObjectId, ref: 'Tag' }],
-    scentGroups: [{ type: Schema.Types.ObjectId, ref: 'ProductTaxonomy' }],
-    concentrations: [{ type: Schema.Types.ObjectId, ref: 'ProductTaxonomy' }],
-    segments: [{ type: Schema.Types.ObjectId, ref: 'ProductTaxonomy' }],
+    // tags đã được chuyển sang ProductTag (bảng trung gian)
     gender: { type: String },
     rating: { type: Number, default: 5 },
     reviewsCount: { type: Number, default: 0 },
@@ -74,9 +71,9 @@ ProductSchema.post('save', async function() {
     const { ProductSEO } = await import('./ProductSEO.ts');
     await ProductSEO.findOneAndUpdate(
       { productId: this._id, tenantId: this.tenantId },
-      { 
+      {
         $set: { embedding: vector },
-        $setOnInsert: { productId: this._id, tenantId: this.tenantId }
+        $setOnInsert: { tenantId: this.tenantId, productId: this._id }
       },
       { upsert: true, new: true }
     );

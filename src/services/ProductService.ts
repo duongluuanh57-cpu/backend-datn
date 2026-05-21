@@ -1,12 +1,13 @@
+import mongoose from 'mongoose';
 import { Product } from '../models/Product.ts';
-import type { IProduct } from '../models/Product.ts';
 import { redis } from '../config/redis.ts';
 import { Brand } from '../models/Brand.ts';
 import { Tag } from '../models/Tag.ts';
+import { ProductTag } from '../models/ProductTag.ts';
 import { ProductImage } from '../models/ProductImage.ts';
 import { ProductVariant } from '../models/ProductVariant.ts';
-import { ProductTaxonomy } from '../models/ProductTaxonomy.ts';
 import { ImageService } from './ImageService.ts';
+import { TaxonomyTermService, ProductTaxonomyTermService } from './TaxonomyTermService.ts';
 
 // Helper slugification
 function slugify(text: string): string {
@@ -29,35 +30,13 @@ function parseSizes(sizeStr: string): { size: string; price: number }[] {
   }).filter(item => item.size);
 }
 
-// Helper to find or create taxonomy
-// Find taxonomy by name (case-insensitive fuzzy match) - NEVER creates new entries
+// Helper to find taxonomy term by name — delegates to TaxonomyTermService
 async function findTaxonomyOnly(
   name: string,
   type: 'segment' | 'scent_group' | 'concentration',
   tenantId: string
 ): Promise<any | null> {
-  if (!name?.trim()) return null;
-  const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-  const normalizedInput = norm(name);
-
-  // Exact match trước
-  const exactSlugMatch = await ProductTaxonomy.findOne({ tenantId, type, slug: slugify(name), status: 'active' });
-  if (exactSlugMatch) return exactSlugMatch._id;
-
-  // Case-insensitive name match
-  const allOfType = await ProductTaxonomy.find({ tenantId, type, status: 'active' }).lean();
-  const exactName = allOfType.find(t => norm(t.name) === normalizedInput);
-  if (exactName) return exactName._id;
-
-  // Partial match
-  const partial = allOfType.find(t => norm(t.name).includes(normalizedInput) || normalizedInput.includes(norm(t.name)));
-  if (partial) {
-    console.warn(`⚠️ [Taxonomy] Partial match "${name}" → "${partial.name}" (type: ${type})`);
-    return partial._id;
-  }
-
-  console.warn(`⚠️ [Taxonomy] "${name}" (type: ${type}) not found in DB - skipping, will NOT create`);
-  return null;
+  return TaxonomyTermService.findByName(name, type, tenantId);
 }
 
 export class ProductService {
@@ -82,74 +61,202 @@ export class ProductService {
       imageMap.get(pId)!.push(img.url);
     }
 
-    // Fetch variants in bulk
-    const variants = await ProductVariant.find({ productId: { $in: productIds }, tenantId }).sort({ sortOrder: 1 }).lean();
-    const variantMap = new Map<string, string[]>();
+    // Fetch variants in bulk via Product.variants references
+    const allVariantIds = products.flatMap(p => (p.variants || []).map((v: any) => v.toString()));
+    const variants = allVariantIds.length > 0
+      ? await ProductVariant.find({ _id: { $in: allVariantIds }, tenantId }).sort({ sortOrder: 1 }).lean()
+      : [];
+
+    // Build variantId -> variant lookup
+    const variantById = new Map<string, any>();
     for (const v of variants) {
-      const pId = v.productId.toString();
-      if (!variantMap.has(pId)) {
-        variantMap.set(pId, []);
+      variantById.set(v._id.toString(), v);
+    }
+
+    // Fetch taxonomy terms in bulk qua bảng trung gian
+    const { ProductTaxonomyTerm } = await import('../models/ProductTaxonomyTerm.ts');
+    const termLinks = await ProductTaxonomyTerm.find({ productId: { $in: productIds }, tenantId })
+      .populate({ path: 'termId', model: 'TaxonomyTerm', select: 'name slug' })
+      .populate({ path: 'taxonomyId', model: 'Taxonomy', select: 'slug' })
+      .lean();
+
+    // Build productId -> { scent_group: [], concentration: [], segment: [] }
+    const termMap = new Map<string, Record<string, any[]>>();
+    for (const link of termLinks) {
+      const pId = (link.productId as any).toString();
+      if (!termMap.has(pId)) {
+        termMap.set(pId, { scent_group: [], concentration: [], segment: [] });
       }
-      variantMap.get(pId)!.push(`${v.size}:${v.price}`);
+      const slug = (link.taxonomyId as any)?.slug;
+      if (slug && termMap.get(pId)![slug]) {
+        termMap.get(pId)![slug].push(link.termId);
+      }
+    }
+
+    // Fetch tags in bulk qua bảng trung gian ProductTag
+    const tagLinks = await ProductTag.find({ productId: { $in: productIds }, tenantId })
+      .populate({ path: 'tagId', model: 'Tag', select: 'name slug' })
+      .lean();
+
+    // Build productId -> tag slug[]
+    const tagMap = new Map<string, string[]>();
+    for (const link of tagLinks) {
+      const pId = (link.productId as any).toString();
+      if (!tagMap.has(pId)) tagMap.set(pId, []);
+      const slug = (link.tagId as any)?.slug;
+      if (slug) tagMap.get(pId)!.push(slug);
+    }
+
+    // Fetch SEO data in bulk
+    const { ProductSEO } = await import('../models/ProductSEO.ts');
+    const productObjectIds = productIds.map(id => new mongoose.Types.ObjectId(id));
+    const seoDocs = await ProductSEO.find({ productId: { $in: productObjectIds }, tenantId }).lean();
+    const seoMap = new Map<string, any>();
+    for (const seo of seoDocs) {
+      const pId = seo.productId.toString();
+      seoMap.set(pId, {
+        metaTitle: seo.metaTitle || '',
+        metaDescription: seo.metaDescription || '',
+        keywords: seo.keywords || [],
+        slug: seo.slug || '',
+        priceReport: seo.priceReport || '',
+        sizeReport: seo.sizeReport || '',
+        discountReport: seo.discountReport || '',
+      });
     }
 
     return products.map(product => {
       const pId = product._id.toString();
       const productImages = imageMap.get(pId) || [];
-      const productVariants = variantMap.get(pId) || [];
-      
+      const terms = termMap.get(pId) || { scent_group: [], concentration: [], segment: [] };
+      const seoData = seoMap.get(pId) || {};
+
+      // Resolve variants for this product in order
+      const productVariants = (product.variants || [])
+        .map((vId: any) => variantById.get(vId.toString()))
+        .filter(Boolean);
+
       return {
         ...product,
+        ...seoData,
         brand: (product.brandId as any)?.name || '',
         image: productImages[0] || '',
         images: productImages.slice(1),
-        size: productVariants.join(', '),
-        tag: (product.tags as any[])?.map(t => t.slug).join(', ') || '',
-        quantityInStock: variants
-          .filter(v => v.productId.toString() === pId)
-          .reduce((sum, v) => sum + (v.quantityInStock || 0), 0) || product.quantityInStock
+        size: productVariants.map((v: any) => `${v.size}:${v.price}`).join(', '),
+        tag: (tagMap.get(pId) || []).join(', '),
+        scentGroup: terms.scent_group.map((t: any) => t?.name).filter(Boolean).join(', '),
+        concentration: terms.concentration.map((t: any) => t?.name).filter(Boolean).join(', '),
+        segment: terms.segment.map((t: any) => t?.name).filter(Boolean).join(', '),
+        quantityInStock: productVariants.reduce((sum: number, v: any) => sum + (v.quantityInStock || 0), 0) || product.quantityInStock
       };
     });
+  }
+
+  /**
+   * Helper: lấy productIds có tag theo slug list
+   */
+  private static async getProductIdsByTagSlugs(slugs: string[], tenantId: string): Promise<mongoose.Types.ObjectId[]> {
+    const tags = await Tag.find({ tenantId, slug: { $in: slugs } }).lean();
+    if (tags.length === 0) return [];
+    const tagIds = tags.map(t => t._id);
+    const links = await ProductTag.find({ tenantId, tagId: { $in: tagIds } }).lean();
+    return links.map(l => l.productId);
   }
 
   /**
    * Lấy danh sách sản phẩm mới nhất
    */
   static async getNewProducts(tenantId: string): Promise<any[]> {
-    const cacheKey = `products:new:tag:v2:${tenantId}`;
+    const cacheKey = `products:new:tag:v3:${tenantId}`;
     
-    // 1. Thử lấy từ Cache Redis
     try {
       const cached = await redis.get(cacheKey);
-      if (cached) {
-        return JSON.parse(cached);
-      }
+      if (cached) return JSON.parse(cached);
     } catch (err) {
       console.warn('Redis error in getNewProducts:', err);
     }
 
-    // Find the tag ID for 'new'
-    const tags = await Tag.find({
-      tenantId,
-      slug: { $in: ['new', 'san-pham-moi'] }
-    }).lean();
-    const tagIds = tags.map(t => t._id);
-
-    // 2. Nếu không có cache, lấy từ DB
+    const productIds = await this.getProductIdsByTagSlugs(['new', 'san-pham-moi'], tenantId);
     const query: any = { tenantId };
-    if (tagIds.length > 0) {
-      query.tags = { $in: tagIds };
-    }
+    if (productIds.length > 0) query._id = { $in: productIds };
 
     const productsRaw = await Product.find(query)
       .populate('brandId')
-      .populate('tags')
       .sort({ createdAt: -1 })
       .lean();
 
     const products = await this.formatMultipleProducts(productsRaw, tenantId);
 
-    // 3. Lưu vào Cache
+    if (products.length > 0) {
+      try {
+        await redis.set(cacheKey, JSON.stringify(products), 'EX', this.CACHE_TTL);
+      } catch (err) {
+        console.warn('Redis set error:', err);
+      }
+    }
+
+    return products;
+  }
+
+  /**
+   * Lấy danh sách sản phẩm giới hạn (tag: 'Limited')
+   */
+  static async getLimitedProducts(tenantId: string): Promise<any[]> {
+    const cacheKey = `products:limited:tag:v2:${tenantId}`;
+
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) return JSON.parse(cached);
+    } catch (err) {
+      console.warn('Redis error in getLimitedProducts:', err);
+    }
+
+    const productIds = await this.getProductIdsByTagSlugs(['limited', 'gioi-han', 'gioi-han-dac-biet'], tenantId);
+    const query: any = { tenantId };
+    if (productIds.length > 0) query._id = { $in: productIds };
+
+    const productsRaw = await Product.find(query)
+      .populate('brandId')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const products = await this.formatMultipleProducts(productsRaw, tenantId);
+
+    if (products.length > 0) {
+      try {
+        await redis.set(cacheKey, JSON.stringify(products), 'EX', this.CACHE_TTL);
+      } catch (err) {
+        console.warn('Redis set error:', err);
+      }
+    }
+
+    return products;
+  }
+
+  /**
+   * Lấy danh sách sản phẩm thịnh hành (tag: 'Trending')
+   */
+  static async getTrendingProducts(tenantId: string): Promise<any[]> {
+    const cacheKey = `products:trending:tag:v3:${tenantId}`;
+    
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) return JSON.parse(cached);
+    } catch (err) {
+      console.warn('Redis error in getTrendingProducts:', err);
+    }
+
+    const productIds = await this.getProductIdsByTagSlugs(['trending', 'thinh-hanh', 'ban-chay', 'hot'], tenantId);
+    const query: any = { tenantId };
+    if (productIds.length > 0) query._id = { $in: productIds };
+
+    const productsRaw = await Product.find(query)
+      .populate('brandId')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const products = await this.formatMultipleProducts(productsRaw, tenantId);
+
     if (products.length > 0) {
       try {
         await redis.set(cacheKey, JSON.stringify(products), 'EX', this.CACHE_TTL);
@@ -167,33 +274,21 @@ export class ProductService {
   static async getSaleProducts(tenantId: string): Promise<any[]> {
     const cacheKey = `products:sale:tag:${tenantId}`;
     
-    // 1. Thử lấy từ Cache Redis
     try {
       const cached = await redis.get(cacheKey);
-      if (cached) {
-        return JSON.parse(cached);
-      }
+      if (cached) return JSON.parse(cached);
     } catch (err) {
       console.warn('Redis error in getSaleProducts:', err);
     }
 
-    // Find the tag ID for 'sale'
-    const tags = await Tag.find({
-      tenantId,
-      slug: { $in: ['sale', 'giam-gia'] }
-    }).lean();
-    const tagIds = tags.map(t => t._id);
-
-    // 2. Nếu không có cache, lấy từ DB
+    const saleProductIds = await this.getProductIdsByTagSlugs(['sale', 'giam-gia'], tenantId);
     const now = new Date();
     
     const queryBase: any = {
       tenantId,
       discountPercentage: { $gt: 0 }
     };
-    if (tagIds.length > 0) {
-      queryBase.tags = { $in: tagIds };
-    }
+    if (saleProductIds.length > 0) queryBase._id = { $in: saleProductIds };
 
     // Tìm sản phẩm giảm giá có thời gian kết thúc gần nhất trong tương lai
     const upcomingSale = await Product.findOne({
@@ -245,7 +340,6 @@ export class ProductService {
   static async getAllProducts(tenantId: string): Promise<any[]> {
     const products = await Product.find({ tenantId })
       .populate('brandId')
-      .populate('tags')
       .sort({ createdAt: -1 })
       .lean();
 
@@ -258,27 +352,36 @@ export class ProductService {
   static async getProductById(id: string, tenantId: string): Promise<any | null> {
     const product = await Product.findOne({ _id: id, tenantId })
       .populate('brandId')
-      .populate('tags')
-      .populate('scentGroups')
-      .populate('concentrations')
-      .populate('segments')
       .lean();
     
     if (!product) return null;
 
     const images = await ProductImage.find({ productId: id, tenantId }).lean();
-    const variants = await ProductVariant.find({ productId: id, tenantId }).sort({ sortOrder: 1 }).lean();
+    const variantIds = (product.variants || []) as mongoose.Types.ObjectId[];
+    const variants = variantIds.length > 0
+      ? await ProductVariant.find({ _id: { $in: variantIds }, tenantId }).sort({ sortOrder: 1 }).lean()
+      : [];
+
+    // Fetch taxonomy terms qua bảng trung gian
+    const terms = await ProductTaxonomyTermService.getTermsForProduct(id, tenantId);
+
+    // Fetch tags qua bảng trung gian ProductTag
+    const tagLinks = await ProductTag.find({ productId: id, tenantId })
+      .populate({ path: 'tagId', model: 'Tag', select: 'name slug' })
+      .lean();
+    const tagSlugs = tagLinks.map(l => (l.tagId as any)?.slug).filter(Boolean);
 
     // Fetch SEO and AI reports from ProductSEO
     let seoData: any = {};
     try {
       const { ProductSEO } = await import('../models/ProductSEO.ts');
-      const seoDoc = await ProductSEO.findOne({ productId: id, tenantId }).lean();
+      const seoDoc = await ProductSEO.findOne({ productId: new mongoose.Types.ObjectId(id), tenantId }).lean();
       if (seoDoc) {
         seoData = {
           metaTitle: seoDoc.metaTitle || '',
           metaDescription: seoDoc.metaDescription || '',
           keywords: seoDoc.keywords || [],
+          slug: seoDoc.slug || '',
           priceReport: seoDoc.priceReport || '',
           sizeReport: seoDoc.sizeReport || '',
           discountReport: seoDoc.discountReport || '',
@@ -294,10 +397,10 @@ export class ProductService {
       image: images[0]?.url || '',
       images: images.slice(1).map(img => img.url),
       size: variants.map(v => `${v.size}:${v.price}`).join(', '),
-      tag: (product.tags as any[])?.map(t => t.slug).join(', ') || '',
-      scentGroup: (product.scentGroups as any[])?.map(s => s.name).join(', ') || '',
-      concentration: (product.concentrations as any[])?.map(c => c.name).join(', ') || '',
-      segment: (product.segments as any[])?.map(s => s.name).join(', ') || '',
+      tag: tagSlugs.join(', '),
+      scentGroup: terms.scent_group.map((t: any) => t?.name).filter(Boolean).join(', '),
+      concentration: terms.concentration.map((t: any) => t?.name).filter(Boolean).join(', '),
+      segment: terms.segment.map((t: any) => t?.name).filter(Boolean).join(', '),
       quantityInStock: variants.reduce((sum, v) => sum + (v.quantityInStock || 0), 0) || product.quantityInStock,
       ...seoData
     };
@@ -320,9 +423,9 @@ export class ProductService {
     if (data.discountEndDate !== undefined) updateData.discountEndDate = data.discountEndDate;
     if (data.keywords !== undefined) updateData.keywords = data.keywords;
 
-    // Brand mapping - chỉ tìm, KHÔNG tạo mới (case-insensitive)
+    // Brand mapping - chỉ tìm, KHÔNG tạo mới (case-insensitive, bỏ qua khoảng trắng thừa)
     if (data.brand) {
-      const brandNameRegex = new RegExp(`^${data.brand.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+      const brandNameRegex = new RegExp(`^\\s*${data.brand.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
       const brandDoc = await Brand.findOne({ name: brandNameRegex, tenantId });
       if (brandDoc) {
         updateData.brandId = brandDoc._id;
@@ -331,7 +434,7 @@ export class ProductService {
       }
     }
 
-    // Tags mapping
+    // Tags mapping — ghi vào bảng trung gian ProductTag
     if (data.tag !== undefined) {
       const tagSlugs = data.tag.split(',').map((s: string) => s.trim()).filter(Boolean);
       const tagIds = [];
@@ -343,24 +446,28 @@ export class ProductService {
         }
         tagIds.push(tagDoc._id);
       }
-      updateData.tags = tagIds;
+      // Xóa tags cũ rồi insert lại
+      await ProductTag.deleteMany({ productId: id, tenantId });
+      if (tagIds.length > 0) {
+        await ProductTag.insertMany(tagIds.map(tagId => ({ productId: id, tagId, tenantId })));
+      }
     }
 
-    // Taxonomy mapping - chỉ tìm trong DB, KHÔNG tạo mới
+    // Taxonomy mapping — ghi vào bảng trung gian ProductTaxonomyTerm
     if (data.scentGroup !== undefined) {
       const scentNames = data.scentGroup.split(',').map((s: string) => s.trim()).filter(Boolean);
       const scentIds = (await Promise.all(scentNames.map((n: string) => findTaxonomyOnly(n, 'scent_group', tenantId)))).filter(Boolean);
-      updateData.scentGroups = scentIds;
+      await ProductTaxonomyTermService.setTermsForProduct(id, 'scent_group', scentIds, tenantId);
     }
     if (data.concentration !== undefined) {
       const concNames = data.concentration.split(',').map((s: string) => s.trim()).filter(Boolean);
       const concIds = (await Promise.all(concNames.map((n: string) => findTaxonomyOnly(n, 'concentration', tenantId)))).filter(Boolean);
-      updateData.concentrations = concIds;
+      await ProductTaxonomyTermService.setTermsForProduct(id, 'concentration', concIds, tenantId);
     }
     if (data.segment !== undefined) {
       const segNames = data.segment.split(',').map((s: string) => s.trim()).filter(Boolean);
       const segIds = (await Promise.all(segNames.map((n: string) => findTaxonomyOnly(n, 'segment', tenantId)))).filter(Boolean);
-      updateData.segments = segIds;
+      await ProductTaxonomyTermService.setTermsForProduct(id, 'segment', segIds, tenantId);
     }
 
     const updatedProduct = await Product.findOneAndUpdate(
@@ -387,19 +494,34 @@ export class ProductService {
 
       // Sync Variants in ProductVariant collection
       if (data.size !== undefined) {
-        await ProductVariant.deleteMany({ productId: id, tenantId });
+        // Delete old variants referenced by this product
+        const existingVariantIds = (updatedProduct.variants || []) as mongoose.Types.ObjectId[];
+        if (existingVariantIds.length > 0) {
+          await ProductVariant.deleteMany({ _id: { $in: existingVariantIds }, tenantId });
+        }
+
         const parsed = parseSizes(data.size);
         if (parsed.length > 0) {
           const variantsToInsert = parsed.map((item, index) => ({
-            productId: id,
             tenantId,
+            productId: id,
             size: item.size,
             price: item.price,
             quantityInStock: index === 0 ? (data.quantityInStock || 0) : 0,
             isDefault: index === 0,
             sortOrder: index
           }));
-          await ProductVariant.insertMany(variantsToInsert);
+          const insertedVariants = await ProductVariant.insertMany(variantsToInsert);
+          const newVariantIds = insertedVariants.map(v => v._id);
+          await Product.findOneAndUpdate(
+            { _id: id, tenantId },
+            { $set: { variants: newVariantIds } }
+          );
+        } else {
+          await Product.findOneAndUpdate(
+            { _id: id, tenantId },
+            { $set: { variants: [] } }
+          );
         }
       }
 
@@ -409,6 +531,7 @@ export class ProductService {
         const seoData: any = {};
         if (data.metaTitle !== undefined) seoData.metaTitle = data.metaTitle;
         if (data.metaDescription !== undefined) seoData.metaDescription = data.metaDescription;
+        if (data.slug !== undefined) seoData.slug = data.slug;
         if (data.keywords !== undefined) {
           seoData.keywords = Array.isArray(data.keywords)
             ? data.keywords
@@ -422,11 +545,8 @@ export class ProductService {
 
         if (Object.keys(seoData).length > 0) {
           await ProductSEO.findOneAndUpdate(
-            { productId: id, tenantId },
-            { 
-              $set: seoData,
-              $setOnInsert: { productId: id, tenantId }
-            },
+            { productId: new mongoose.Types.ObjectId(id), tenantId },
+            { $set: seoData, $setOnInsert: { tenantId, productId: new mongoose.Types.ObjectId(id) } },
             { upsert: true, new: true }
           );
         }
@@ -436,7 +556,11 @@ export class ProductService {
 
       // Xóa các cache liên quan sau khi cập nhật
       await redis.del(`products:new:tag:${tenantId}`);
+      await redis.del(`products:new:tag:v3:${tenantId}`);
+      await redis.del(`products:limited:tag:v2:${tenantId}`);
       await redis.del(`products:sale:tag:${tenantId}`);
+      await redis.del(`products:trending:tag:${tenantId}`);
+      await redis.del(`products:trending:tag:v3:${tenantId}`);
       await redis.del(`products:${id}:${tenantId}`);
     }
     
@@ -452,12 +576,26 @@ export class ProductService {
 
     // Fetch images before deletion from DB
     const images = await ProductImage.find({ productId: id, tenantId }).lean();
+    const variantIds = (product.variants || []) as mongoose.Types.ObjectId[];
 
     const result = await Product.deleteOne({ _id: id, tenantId });
     if (result.deletedCount > 0) {
       // Clean normalized collections
       await ProductImage.deleteMany({ productId: id, tenantId });
-      await ProductVariant.deleteMany({ productId: id, tenantId });
+      if (variantIds.length > 0) {
+        await ProductVariant.deleteMany({ _id: { $in: variantIds }, tenantId });
+      }
+      // Xóa taxonomy term links
+      await ProductTaxonomyTermService.deleteAllForProduct(id, tenantId);
+      // Xóa tag links
+      await ProductTag.deleteMany({ productId: id, tenantId });
+      // Delete SEO doc
+      try {
+        const { ProductSEO } = await import('../models/ProductSEO.ts');
+        await ProductSEO.deleteOne({ productId: id, tenantId });
+      } catch (err) {
+        console.warn('Failed to delete ProductSEO in deleteProduct:', err);
+      }
 
       // Delete images and virtual folder from R2
       const foldersToDelete = new Set<string>();
@@ -481,7 +619,11 @@ export class ProductService {
 
       try {
         await redis.del(`products:new:tag:${tenantId}`);
+        await redis.del(`products:new:tag:v3:${tenantId}`);
+        await redis.del(`products:limited:tag:v2:${tenantId}`);
         await redis.del(`products:sale:tag:${tenantId}`);
+        await redis.del(`products:trending:tag:${tenantId}`);
+        await redis.del(`products:trending:tag:v3:${tenantId}`);
         await redis.del(`products:${id}:${tenantId}`);
       } catch (err) {
         console.warn('Failed to clear product caches on deletion:', err);
@@ -499,12 +641,26 @@ export class ProductService {
     // Fetch products and images before deletion from DB
     const products = await Product.find({ _id: { $in: ids }, tenantId }).lean();
     const images = await ProductImage.find({ productId: { $in: ids }, tenantId }).lean();
-    
+    const allVariantIds = products.flatMap(p => (p.variants || []) as mongoose.Types.ObjectId[]);
+
     const result = await Product.deleteMany({ _id: { $in: ids }, tenantId });
     if (result.deletedCount > 0) {
       // Clean normalized collections in bulk
       await ProductImage.deleteMany({ productId: { $in: ids }, tenantId });
-      await ProductVariant.deleteMany({ productId: { $in: ids }, tenantId });
+      if (allVariantIds.length > 0) {
+        await ProductVariant.deleteMany({ _id: { $in: allVariantIds }, tenantId });
+      }
+      // Xóa taxonomy term links
+      await ProductTaxonomyTermService.deleteAllForProducts(ids, tenantId);
+      // Xóa tag links
+      await ProductTag.deleteMany({ productId: { $in: ids }, tenantId });
+      // Delete SEO docs
+      try {
+        const { ProductSEO } = await import('../models/ProductSEO.ts');
+        await ProductSEO.deleteMany({ productId: { $in: ids }, tenantId });
+      } catch (err) {
+        console.warn('Failed to delete ProductSEO in bulkDeleteProducts:', err);
+      }
 
       // Delete images and virtual folders from R2
       const foldersToDelete = new Set<string>();
@@ -530,7 +686,11 @@ export class ProductService {
 
       try {
         await redis.del(`products:new:tag:${tenantId}`);
+        await redis.del(`products:new:tag:v3:${tenantId}`);
+        await redis.del(`products:limited:tag:v2:${tenantId}`);
         await redis.del(`products:sale:tag:${tenantId}`);
+        await redis.del(`products:trending:tag:${tenantId}`);
+        await redis.del(`products:trending:tag:v3:${tenantId}`);
         for (const id of ids) {
           await redis.del(`products:${id}:${tenantId}`);
         }
@@ -558,66 +718,94 @@ export class ProductService {
     if (data.discountEndDate !== undefined) productData.discountEndDate = data.discountEndDate;
     if (data.keywords !== undefined) productData.keywords = data.keywords;
 
-    // Brand mapping - chỉ tìm, KHÔNG tạo mới (case-insensitive)
+    // Brand mapping - chỉ tìm, KHÔNG tạo mới (case-insensitive, bỏ qua khoảng trắng thừa)
     if (data.brand) {
-      const brandNameRegex = new RegExp(`^${data.brand.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+      const brandNameRegex = new RegExp(`^\\s*${data.brand.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
       const brandDoc = await Brand.findOne({ name: brandNameRegex, tenantId });
+      console.log(`🔍 [Brand] Tìm "${data.brand}" (tenantId: ${tenantId}) → ${brandDoc ? `Tìm thấy: ${brandDoc.name}` : 'KHÔNG TÌM THẤY'}`);
       if (brandDoc) {
         productData.brandId = brandDoc._id;
       } else {
-        console.warn(`⚠️ [Brand] "${data.brand}" not found in DB - skipping, will NOT create`);
+        throw new Error(`Brand "${data.brand}" không tồn tại trong hệ thống. Vui lòng tạo brand trước.`);
       }
+    } else {
+      throw new Error('brand là bắt buộc khi tạo sản phẩm.');
     }
 
-    // Tags mapping
+    // Tags mapping — ghi vào bảng trung gian ProductTag sau khi save
+    const pendingTagSlugs: string[] = [];
     if (data.tag) {
-      const tagSlugs = data.tag.split(',').map((s: string) => s.trim()).filter(Boolean);
-      const tagIds = [];
-      for (const slug of tagSlugs) {
+      pendingTagSlugs.push(...data.tag.split(',').map((s: string) => s.trim()).filter(Boolean));
+    }
+
+    // Taxonomy mapping — ghi vào bảng trung gian ProductTaxonomyTerm sau khi save
+    if (data.scentGroup) {
+      const scentNames = data.scentGroup.split(',').map((s: string) => s.trim()).filter(Boolean);
+      const scentIds = (await Promise.all(scentNames.map((n: string) => findTaxonomyOnly(n, 'scent_group', tenantId)))).filter(Boolean);
+      productData._pendingScentIds = scentIds;
+    }
+    if (data.concentration) {
+      const concNames = data.concentration.split(',').map((s: string) => s.trim()).filter(Boolean);
+      const concIds = (await Promise.all(concNames.map((n: string) => findTaxonomyOnly(n, 'concentration', tenantId)))).filter(Boolean);
+      productData._pendingConcIds = concIds;
+    }
+    if (data.segment) {
+      const segNames = data.segment.split(',').map((s: string) => s.trim()).filter(Boolean);
+      const segIds = (await Promise.all(segNames.map((n: string) => findTaxonomyOnly(n, 'segment', tenantId)))).filter(Boolean);
+      productData._pendingSegIds = segIds;
+    }
+
+    // Tách pending IDs ra trước khi tạo Product
+    const pendingScentIds = productData._pendingScentIds || [];
+    const pendingConcIds = productData._pendingConcIds || [];
+    const pendingSegIds = productData._pendingSegIds || [];
+    delete productData._pendingScentIds;
+    delete productData._pendingConcIds;
+    delete productData._pendingSegIds;
+
+    const product = new Product(productData);
+    const saved = await product.save();
+
+    // Ghi taxonomy term links vào bảng trung gian
+    await Promise.all([
+      pendingScentIds.length > 0 && ProductTaxonomyTermService.setTermsForProduct(saved._id.toString(), 'scent_group', pendingScentIds, tenantId),
+      pendingConcIds.length > 0 && ProductTaxonomyTermService.setTermsForProduct(saved._id.toString(), 'concentration', pendingConcIds, tenantId),
+      pendingSegIds.length > 0 && ProductTaxonomyTermService.setTermsForProduct(saved._id.toString(), 'segment', pendingSegIds, tenantId),
+    ]);
+
+    // Ghi tag links vào bảng trung gian ProductTag
+    if (pendingTagSlugs.length > 0) {
+      const tagDocs = [];
+      for (const slug of pendingTagSlugs) {
         let tagDoc = await Tag.findOne({ slug, tenantId });
         if (!tagDoc) {
           const name = slug.charAt(0).toUpperCase() + slug.slice(1);
           tagDoc = await Tag.create({ name, slug, status: 'active', tenantId });
         }
-        tagIds.push(tagDoc._id);
+        tagDocs.push(tagDoc._id);
       }
-      productData.tags = tagIds;
+      await ProductTag.insertMany(tagDocs.map(tagId => ({ productId: saved._id, tagId, tenantId })));
     }
-
-    // Taxonomy mapping - chỉ tìm trong DB, KHÔNG tạo mới
-    if (data.scentGroup) {
-      const scentNames = data.scentGroup.split(',').map((s: string) => s.trim()).filter(Boolean);
-      const scentIds = (await Promise.all(scentNames.map((n: string) => findTaxonomyOnly(n, 'scent_group', tenantId)))).filter(Boolean);
-      productData.scentGroups = scentIds;
-    }
-    if (data.concentration) {
-      const concNames = data.concentration.split(',').map((s: string) => s.trim()).filter(Boolean);
-      const concIds = (await Promise.all(concNames.map((n: string) => findTaxonomyOnly(n, 'concentration', tenantId)))).filter(Boolean);
-      productData.concentrations = concIds;
-    }
-    if (data.segment) {
-      const segNames = data.segment.split(',').map((s: string) => s.trim()).filter(Boolean);
-      const segIds = (await Promise.all(segNames.map((n: string) => findTaxonomyOnly(n, 'segment', tenantId)))).filter(Boolean);
-      productData.segments = segIds;
-    }
-
-    const product = new Product(productData);
-    const saved = await product.save();
 
     // Size / Variants mapping
     if (data.size) {
       const parsed = parseSizes(data.size);
       if (parsed.length > 0) {
         const variantsToInsert = parsed.map((item, index) => ({
-          productId: saved._id,
           tenantId,
+          productId: saved._id,
           size: item.size,
           price: item.price,
           quantityInStock: index === 0 ? (data.quantityInStock || 0) : 0,
           isDefault: index === 0,
           sortOrder: index
         }));
-        await ProductVariant.insertMany(variantsToInsert);
+        const insertedVariants = await ProductVariant.insertMany(variantsToInsert);
+        const variantIds = insertedVariants.map(v => v._id);
+        await Product.findOneAndUpdate(
+          { _id: saved._id, tenantId },
+          { $set: { variants: variantIds } }
+        );
       }
     }
 
@@ -644,21 +832,17 @@ export class ProductService {
         ? data.keywords.split(',').map((k: string) => k.trim()).filter(Boolean)
         : [];
 
-      await ProductSEO.findOneAndUpdate(
-        { productId: saved._id, tenantId },
-        {
-          $set: {
-            metaTitle: data.metaTitle,
-            metaDescription: data.metaDescription,
-            keywords: keywordsArray,
-            priceReport: data.priceReport,
-            sizeReport: data.sizeReport,
-            discountReport: data.discountReport,
-          },
-          $setOnInsert: { productId: saved._id, tenantId }
-        },
-        { upsert: true, new: true }
-      );
+      const seoDoc = await ProductSEO.create({
+        tenantId,
+        productId: saved._id,
+        metaTitle: data.metaTitle,
+        metaDescription: data.metaDescription,
+        slug: data.slug,
+        keywords: keywordsArray,
+        priceReport: data.priceReport,
+        sizeReport: data.sizeReport,
+        discountReport: data.discountReport,
+      });
     } catch (err) {
       console.error('Failed to save ProductSEO in createProduct:', err);
     }
@@ -666,7 +850,11 @@ export class ProductService {
     // Clear Redis Cache so that the new product immediately shows up on the homepage/outside!
     try {
       await redis.del(`products:new:tag:${tenantId}`);
+      await redis.del(`products:new:tag:v3:${tenantId}`);
+      await redis.del(`products:limited:tag:v2:${tenantId}`);
       await redis.del(`products:sale:tag:${tenantId}`);
+      await redis.del(`products:trending:tag:${tenantId}`);
+      await redis.del(`products:trending:tag:v3:${tenantId}`);
     } catch (err) {
       console.warn('Failed to clear product caches on creation:', err);
     }

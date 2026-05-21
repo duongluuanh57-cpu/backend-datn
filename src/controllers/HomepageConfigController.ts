@@ -16,6 +16,18 @@ export class HomepageConfigController {
       if (!config) {
         config = new HomepageConfig({ tenantId });
         await config.save();
+      } else {
+        // Tự động thêm trendingProducts vào sections nếu chưa tồn tại
+        const hasTrending = config.sections.some((s: any) => s.id === 'trendingProducts');
+        if (!hasTrending) {
+          const maxOrder = Math.max(...config.sections.map((s: any) => s.order), 0);
+          config.sections.push({
+            id: 'trendingProducts',
+            enabled: true,
+            order: maxOrder + 1
+          });
+          await config.save();
+        }
       }
 
       return reply.status(200).send({

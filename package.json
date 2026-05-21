@@ -12,6 +12,7 @@
     "migrate:images": "node --strip-types src/scripts/migrate-product-images.ts",
     "migrate:orders": "node --strip-types src/scripts/migrate-order-items.ts",
     "migrate:taxonomies": "node --strip-types src/scripts/migrate-product-taxonomies.ts",
+    "migrate:taxonomy-v2": "node --strip-types src/scripts/migrate-taxonomy.ts",
     "check:orders": "node --strip-types src/scripts/check-orders.ts",
     "seed:orders": "node --strip-types src/scripts/seed-orders.ts"
   },

@@ -72,9 +72,10 @@ const DEFAULT_SECTIONS: ISectionConfig[] = [
   { id: 'brandsMarquee', enabled: true, order: 1 },
   { id: 'saleProducts', enabled: true, order: 2 },
   { id: 'newProducts', enabled: true, order: 3 },
-  { id: 'brandUsp', enabled: true, order: 4 },
-  { id: 'luxuryGallery', enabled: true, order: 5 },
-  { id: 'blogPosts', enabled: true, order: 6 }
+  { id: 'trendingProducts', enabled: true, order: 4 },
+  { id: 'brandUsp', enabled: true, order: 5 },
+  { id: 'luxuryGallery', enabled: true, order: 6 },
+  { id: 'blogPosts', enabled: true, order: 7 }
 ];
 
 const ProductCardConfigSchema = new Schema<IProductCardConfig>(

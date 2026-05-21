@@ -26,6 +26,47 @@ export class ProductController {
   }
 
   /**
+   * GET /api/products/limited
+   */
+  static async getLimitedProducts(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const products = await ProductService.getLimitedProducts(tenantId);
+
+      return reply.status(200).send({
+        success: true,
+        data: products,
+      });
+    } catch (error: any) {
+      return reply.status(500).send({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * GET /api/products/trending
+   */
+  static async getTrendingProducts(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      
+      const products = await ProductService.getTrendingProducts(tenantId);
+      
+      return reply.status(200).send({
+        success: true,
+        data: products,
+      });
+    } catch (error: any) {
+      return reply.status(500).send({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
    * GET /api/products/sale
    */
   static async getSaleProducts(req: FastifyRequest, reply: FastifyReply) {
@@ -87,7 +128,10 @@ export class ProductController {
       
       return reply.status(200).send({ success: true, data: product });
     } catch (error: any) {
-      return reply.status(500).send({ success: false, message: error.message });
+      const isValidationError = error.message?.includes('không tồn tại') ||
+                                error.message?.includes('bắt buộc') ||
+                                error.name === 'ValidationError';
+      return reply.status(isValidationError ? 400 : 500).send({ success: false, message: error.message });
     }
   }
 
@@ -143,7 +187,12 @@ export class ProductController {
         data: product,
       });
     } catch (error: any) {
-      return reply.status(500).send({
+      console.error('❌ [createProduct] Error:', error.name, error.message);
+      // Lỗi validation (brand/taxonomy không tồn tại) → 400
+      const isValidationError = error.message?.includes('không tồn tại') || 
+                                error.message?.includes('bắt buộc') ||
+                                error.name === 'ValidationError';
+      return reply.status(isValidationError ? 400 : 500).send({
         success: false,
         message: error.message,
       });

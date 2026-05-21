@@ -3,7 +3,7 @@ import { multiTenancyPlugin } from '../utils/multiTenancyPlugin.ts';
 
 export interface IProductVariant extends Document {
   tenantId: string;
-  productId: mongoose.Types.ObjectId;
+  productId: mongoose.Types.ObjectId; // Reference to Product
   size: string; // '30ml', '50ml', '100ml', etc.
   price: number;
   quantityInStock: number;
@@ -30,9 +30,6 @@ const ProductVariantSchema = new Schema<IProductVariant>(
     collection: 'product_variants',
   }
 );
-
-// Index để đảm bảo không trùng size cho cùng 1 product
-ProductVariantSchema.index({ productId: 1, size: 1 }, { unique: true });
 
 ProductVariantSchema.plugin(multiTenancyPlugin);
 

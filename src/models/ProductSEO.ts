@@ -3,7 +3,7 @@ import { multiTenancyPlugin } from '../utils/multiTenancyPlugin.ts';
 
 export interface IProductSEO extends Document {
   tenantId: string;
-  productId: mongoose.Types.ObjectId;
+  productId?: mongoose.Types.ObjectId; // Reference ngược lại Product
   metaTitle?: string;
   metaDescription?: string;
   keywords?: string[];
@@ -23,7 +23,7 @@ export interface IProductSEO extends Document {
 const ProductSEOSchema = new Schema<IProductSEO>(
   {
     tenantId: { type: String, required: true, index: true },
-    productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true, unique: true, index: true },
+    productId: { type: Schema.Types.ObjectId, ref: 'Product', index: true },
     metaTitle: { type: String },
     metaDescription: { type: String },
     keywords: [{ type: String }],

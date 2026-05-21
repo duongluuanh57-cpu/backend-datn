@@ -5,6 +5,8 @@ import { authMiddleware, requireRole } from '../middleware/authMiddleware.ts';
 export async function productRoutes(app: FastifyInstance) {
   // Lấy danh sách sản phẩm mới (Public)
   app.get('/new', ProductController.getNewProducts);
+  app.get('/limited', ProductController.getLimitedProducts);
+  app.get('/trending', ProductController.getTrendingProducts);
   app.get('/sale', ProductController.getSaleProducts);
   
   // Quản lý sản phẩm (CRUD)

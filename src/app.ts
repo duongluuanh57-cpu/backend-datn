@@ -22,6 +22,11 @@ import { tagRoutes } from './routes/tag.routes.ts';
 import { segmentRoutes } from './routes/segment.routes.ts'; // DEPRECATED — kept for backward compat
 import { orderRoutes } from './routes/order.routes.ts';
 import { taxonomyRoutes } from './routes/taxonomy.routes.ts';
+import { taxonomyV2Routes } from './routes/taxonomy-v2.routes.ts';
+// Đảm bảo các model mới được đăng ký với Mongoose khi app khởi động
+import './models/Taxonomy.ts';
+import './models/TaxonomyTerm.ts';
+import './models/ProductTaxonomyTerm.ts';
 import { userAddressRoutes } from './routes/user-address.routes.ts';
 import { homepageConfigRoutes } from './routes/homepage.routes.ts';
 import rawBody from 'fastify-raw-body';
@@ -102,6 +107,8 @@ export function buildApp(): FastifyInstance {
   app.register(tagRoutes, { prefix: '/api/tags' });
   // Taxonomy (segment, scent_group, concentration) — unified
   app.register(taxonomyRoutes, { prefix: '/api/taxonomies' });
+  // Taxonomy v2 — Taxonomy (cha) + TaxonomyTerm (con) + bảng trung gian
+  app.register(taxonomyV2Routes, { prefix: '/api/v2/taxonomies' });
   // Legacy aliases — kept for backward compat during transition
   app.register(segmentRoutes, { prefix: '/api/segments' });
   app.register(orderRoutes, { prefix: '/api/orders' });

@@ -6,7 +6,8 @@ import { Knowledge } from '../models/Knowledge.ts';
 import { Product } from '../models/Product.ts';
 import { Brand } from '../models/Brand.ts';
 import { Tag } from '../models/Tag.ts';
-import { ProductTaxonomy } from '../models/ProductTaxonomy.ts';
+import { TaxonomyTerm } from '../models/TaxonomyTerm.ts';
+import { Taxonomy } from '../models/Taxonomy.ts';
 
 export class AIChatController {
   /**
@@ -96,9 +97,16 @@ export class AIChatController {
         const [allBrands, allTags, allScents, allConcentrations, allSegments, allProducts] = await Promise.all([
           Brand.find({ status: 'active' }).select('name').lean(),
           Tag.find({ status: 'active' }).select('name').lean(),
-          ProductTaxonomy.find({ type: 'scent_group', status: 'active' }).select('name').lean(),
-          ProductTaxonomy.find({ type: 'concentration', status: 'active' }).select('name').lean(),
-          ProductTaxonomy.find({ type: 'segment', status: 'active' }).select('name').lean(),
+          // Lấy terms theo taxonomy slug mới
+          Taxonomy.findOne({ slug: 'scent_group', tenantId }).lean().then(t =>
+            t ? TaxonomyTerm.find({ taxonomyId: t._id, tenantId, status: 'active' }).select('name').lean() : []
+          ),
+          Taxonomy.findOne({ slug: 'concentration', tenantId }).lean().then(t =>
+            t ? TaxonomyTerm.find({ taxonomyId: t._id, tenantId, status: 'active' }).select('name').lean() : []
+          ),
+          Taxonomy.findOne({ slug: 'segment', tenantId }).lean().then(t =>
+            t ? TaxonomyTerm.find({ taxonomyId: t._id, tenantId, status: 'active' }).select('name').lean() : []
+          ),
           Product.find({}).select('name brand').lean()
         ]);
         globalInfo = `TỔNG QUAN TOÀN BỘ CƠ SỞ DỮ LIỆU CỬA HÀNG (Dùng để trả lời nếu khách hỏi tổng quát):

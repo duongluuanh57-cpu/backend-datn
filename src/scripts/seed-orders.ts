@@ -21,18 +21,32 @@ async function seedOrders() {
 
     const tenantId = 'default';
 
-    // Lấy một số sản phẩm từ database
-    let products = await Product.find({ tenantId }).limit(5).lean();
+    // Lấy một số sản phẩm từ database (bỏ qua tenantId vì các sản phẩm thực tế có tenantId 'default-tenant')
+    let products = await Product.find({}).limit(5).lean();
     
     if (products.length === 0) {
-      console.log('⚠️  Không tìm thấy sản phẩm. Đang tạo 5 sản phẩm mẫu...\n');
+      console.log('⚠️  Không tìm thấy sản phẩm. Đang lấy brand hoặc tạo brand mới...\n');
       
-      // Tạo 5 sản phẩm mẫu
+      let brand = await mongoose.connection.db.collection('brands').findOne({});
+      if (!brand) {
+        // Tạo brand mẫu
+        const newBrand = await mongoose.connection.db.collection('brands').insertOne({
+          tenantId: 'default-tenant',
+          name: 'L\'essence Brand',
+          description: 'Thương hiệu nước hoa cao cấp L\'essence',
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+        brand = { _id: newBrand.insertedId, name: 'L\'essence Brand' } as any;
+        console.log('✅ Đã tạo brand mẫu mới');
+      }
+
+      // Tạo 5 sản phẩm mẫu với brandId hợp lệ
       const sampleProducts = await Product.insertMany([
         {
-          tenantId,
+          tenantId: 'default-tenant',
           name: 'Chanel No.5 Eau de Parfum',
-          brand: 'Chanel',
+          brandId: brand._id,
           price: 3500000,
           image: 'https://i.ibb.co/C3Y4Vv7Y/perfume2.webp',
           description: 'Hương thơm huyền thoại của Chanel',
@@ -45,9 +59,9 @@ async function seedOrders() {
           segment: 'Luxury'
         },
         {
-          tenantId,
+          tenantId: 'default-tenant',
           name: 'Dior Sauvage',
-          brand: 'Dior',
+          brandId: brand._id,
           price: 2800000,
           image: 'https://i.ibb.co/C3Y4Vv7Y/perfume2.webp',
           description: 'Hương thơm nam tính mạnh mẽ',
@@ -60,9 +74,9 @@ async function seedOrders() {
           segment: 'Premium'
         },
         {
-          tenantId,
+          tenantId: 'default-tenant',
           name: 'Tom Ford Black Orchid',
-          brand: 'Tom Ford',
+          brandId: brand._id,
           price: 4200000,
           image: 'https://i.ibb.co/C3Y4Vv7Y/perfume2.webp',
           description: 'Hương thơm quyến rũ và bí ẩn',
@@ -74,9 +88,9 @@ async function seedOrders() {
           segment: 'Luxury'
         },
         {
-          tenantId,
+          tenantId: 'default-tenant',
           name: 'Yves Saint Laurent Libre',
-          brand: 'YSL',
+          brandId: brand._id,
           price: 3200000,
           image: 'https://i.ibb.co/C3Y4Vv7Y/perfume2.webp',
           description: 'Hương thơm tự do và hiện đại',
@@ -89,9 +103,9 @@ async function seedOrders() {
           segment: 'Premium'
         },
         {
-          tenantId,
+          tenantId: 'default-tenant',
           name: 'Versace Eros',
-          brand: 'Versace',
+          brandId: brand._id,
           price: 2500000,
           image: 'https://i.ibb.co/C3Y4Vv7Y/perfume2.webp',
           description: 'Hương thơm nam tính cuốn hút',
@@ -104,7 +118,7 @@ async function seedOrders() {
         }
       ]);
       
-      products = sampleProducts;
+      products = sampleProducts.map(p => p.toObject ? p.toObject() : p) as any;
       console.log(`✅ Đã tạo ${products.length} sản phẩm mẫu\n`);
     }
 
@@ -115,17 +129,17 @@ async function seedOrders() {
     const userId = user?._id;
 
     // Xóa tất cả orders và order_items cũ
-    await Order.deleteMany({ tenantId });
-    await OrderItem.deleteMany({ tenantId });
-    console.log('🗑️  Đã xóa tất cả orders và order_items cũ\n');
+    await Order.deleteMany({});
+    await OrderItem.deleteMany({});
+    console.log('🗑️  Đã xóa tất cả orders và order_items cũ toàn bộ DB\n');
 
     // === ORDER 1: Delivered ===
     const order1 = await Order.create({
       tenantId,
       userId,
-      customerName: user?.name || 'Nguyễn Văn A',
+      customerName: user?.fullName || user?.username || 'Nguyễn Văn A',
       customerEmail: user?.email || 'nguyenvana@example.com',
-      customerPhone: '0901234567',
+      customerPhone: user?.phoneNumber || '0901234567',
       customerAddress: '123 Đường ABC, Quận 1, TP.HCM',
       status: 'delivered',
       paymentMethod: 'bank_transfer',
@@ -134,12 +148,12 @@ async function seedOrders() {
       createdAt: new Date('2026-05-15T10:30:00.000Z')
     });
 
-    await OrderItem.insertMany([
+    const items1 = await OrderItem.insertMany([
       {
         tenantId,
         orderId: order1._id,
         productId: products[0]._id,
-        brandId: products[0].brand ? undefined : undefined, // Sẽ cập nhật sau nếu có Brand collection
+        brandId: products[0].brand ? undefined : undefined,
         name: products[0].name,
         brand: products[0].brand,
         quantity: 2,
@@ -161,15 +175,20 @@ async function seedOrders() {
       }
     ]);
 
+    await Order.updateOne(
+      { _id: order1._id },
+      { $set: { items: items1.map((i) => i._id) } }
+    );
+
     console.log(`✅ Order 1: ${order1._id} - ${order1.status} - 2 items`);
 
     // === ORDER 2: Processing ===
     const order2 = await Order.create({
       tenantId,
       userId,
-      customerName: user?.name || 'Trần Thị B',
+      customerName: user?.fullName || user?.username || 'Nguyễn Văn A',
       customerEmail: user?.email || 'tranthib@example.com',
-      customerPhone: '0912345678',
+      customerPhone: user?.phoneNumber || '0912345678',
       customerAddress: '456 Đường XYZ, Quận 3, TP.HCM',
       status: 'processing',
       paymentMethod: 'cod',
@@ -178,7 +197,7 @@ async function seedOrders() {
       createdAt: new Date('2026-05-18T14:20:00.000Z')
     });
 
-    await OrderItem.create({
+    const item2 = await OrderItem.create({
       tenantId,
       orderId: order2._id,
       productId: products[2]._id,
@@ -191,15 +210,20 @@ async function seedOrders() {
       image: products[2].image || ''
     });
 
+    await Order.updateOne(
+      { _id: order2._id },
+      { $set: { items: [item2._id] } }
+    );
+
     console.log(`✅ Order 2: ${order2._id} - ${order2.status} - 1 item`);
 
     // === ORDER 3: Pending ===
     const order3 = await Order.create({
       tenantId,
       userId,
-      customerName: user?.name || 'Lê Văn C',
+      customerName: user?.fullName || user?.username || 'Nguyễn Văn A',
       customerEmail: user?.email || 'levanc@example.com',
-      customerPhone: '0923456789',
+      customerPhone: user?.phoneNumber || '0923456789',
       customerAddress: '789 Đường DEF, Quận 7, TP.HCM',
       status: 'pending',
       paymentMethod: 'momo',
@@ -208,7 +232,7 @@ async function seedOrders() {
       createdAt: new Date('2026-05-19T09:15:00.000Z')
     });
 
-    await OrderItem.insertMany([
+    const items3 = await OrderItem.insertMany([
       {
         tenantId,
         orderId: order3._id,
@@ -246,6 +270,11 @@ async function seedOrders() {
         image: products[4].image || ''
       }
     ]);
+
+    await Order.updateOne(
+      { _id: order3._id },
+      { $set: { items: items3.map((i) => i._id) } }
+    );
 
     console.log(`✅ Order 3: ${order3._id} - ${order3.status} - 3 items`);
 
