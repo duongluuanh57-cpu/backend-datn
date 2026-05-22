@@ -181,7 +181,43 @@ Output ONLY a raw valid JSON object. No markdown, no code blocks.
         jsonString = raw.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/, '').trim();
       }
 
-      const productInfo = JSON.parse(jsonString);
+      // Validate and fix JSON before parsing
+      let productInfo: any;
+      try {
+        // Log raw JSON for debugging
+        console.log(`📝 [AI Raw JSON] Length: ${jsonString.length} chars`);
+        console.log(`📝 [AI Raw JSON Preview]: ${jsonString.substring(0, 500)}...`);
+
+        // Try to parse directly first
+        productInfo = JSON.parse(jsonString);
+      } catch (parseError: any) {
+        console.error(`❌ [AI JSON Parse Error] ${parseError.message}`);
+        console.error(`❌ [AI Raw JSON] ${jsonString.substring(0, 1000)}`);
+
+        // Attempt to fix common JSON errors
+        try {
+          // Remove trailing commas
+          let fixedJson = jsonString.replace(/,(\s*[}\]])/g, '$1');
+          // Fix quotes in keys/values
+          fixedJson = fixedJson.replace(/(\w+):/g, '"$1":');
+          fixedJson = fixedJson.replace(/:\s*([^",{\[\d][^",{\[\]]*)/g, (match) => {
+            const val = match.trim().substring(1);
+            if (val.includes('"')) return match;
+            return `: "${val}"`;
+          });
+
+          console.log(`🔧 [AI JSON Fix Attempt] Applying fixes...`);
+          productInfo = JSON.parse(fixedJson);
+          console.log(`✅ [AI JSON Fix] Successfully parsed after fixes`);
+        } catch (fixError: any) {
+          console.error(`❌ [AI JSON Fix Failed] ${fixError.message}`);
+          return reply.status(500).send({
+            error: 'AI trả về JSON không hợp lệ',
+            details: parseError.message,
+            rawResponse: jsonString.substring(0, 500)
+          });
+        }
+      }
 
       // ── OPTIMIZATION 3: Resolve taxonomy & tag song song (in-memory, 0 DB queries) ─
       const [scentGroupResult, concentrationResult, segmentResult] = await Promise.all([
