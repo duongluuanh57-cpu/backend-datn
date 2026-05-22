@@ -5,22 +5,31 @@ export class UserController {
   /**
    * GET /api/users
    * Lấy danh sách người dùng (Admin only)
+   * Query params: page, limit, search, role
    */
   static async getAllUsers(request: FastifyRequest, reply: FastifyReply) {
     try {
       const tenantId = (request as any).user?.tenantId || 'default';
-      const users = await UserRepository.findAll(tenantId);
-      
-      // Không trả về passwordHash
-      const safeUsers = users.map(u => {
-        const { passwordHash, ...rest } = u as any;
-        return rest;
+      const query = request.query as { page?: string; limit?: string; search?: string; role?: string };
+
+      // Nếu không có page, trả full list (backward compatible)
+      if (!query.page) {
+        const users = await UserRepository.findAll(tenantId);
+        const safeUsers = users.map(u => {
+          const { passwordHash, ...rest } = u as any;
+          return rest;
+        });
+        return reply.send({ success: true, data: safeUsers });
+      }
+
+      const result = await UserRepository.findPaginated(tenantId, {
+        page: parseInt(query.page, 10),
+        limit: query.limit ? parseInt(query.limit, 10) : 10,
+        search: query.search,
+        role: query.role,
       });
 
-      return reply.send({
-        success: true,
-        data: safeUsers,
-      });
+      return reply.send({ success: true, data: result });
     } catch (error: any) {
       return reply.status(500).send({
         success: false,

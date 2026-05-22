@@ -31,6 +31,41 @@ export class UserRepository {
     return User.find({ tenantId }).sort({ createdAt: -1 }).lean();
   }
 
+  static async findPaginated(
+    tenantId: string,
+    options: { page: number; limit: number; search?: string; role?: string }
+  ): Promise<{ items: any[]; total: number; page: number; totalPages: number }> {
+    const { page, limit, search, role } = options;
+
+    const query: any = { tenantId };
+
+    if (search) {
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      query.$or = [
+        { username: { $regex: escaped, $options: 'i' } },
+        { email: { $regex: escaped, $options: 'i' } },
+      ];
+    }
+
+    if (role && role !== 'ALL') {
+      query.role = role;
+    }
+
+    const total = await User.countDocuments(query);
+    const users = await User.find(query)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean();
+
+    const items = users.map((u: any) => {
+      const { passwordHash, ...rest } = u;
+      return rest;
+    });
+
+    return { items, total, page, totalPages: Math.ceil(total / limit) };
+  }
+
   static async delete(id: string, tenantId: string): Promise<boolean> {
     const result = await User.deleteOne({ _id: id, tenantId });
     return result.deletedCount > 0;

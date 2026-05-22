@@ -96,12 +96,21 @@ export class TaxonomyTermController {
   /**
    * GET /api/v2/taxonomies/:taxonomyId/terms
    * GET /api/v2/taxonomies/:taxonomyId/terms?active=true
+   * Supports pagination when ?page= is provided
    */
   static async getAll(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { taxonomyId } = req.params as { taxonomyId: string };
-      const { active } = req.query as { active?: string };
+      const { active, page, limit, search } = req.query as { active?: string; page?: string; limit?: string; search?: string };
       const tenantId = TaxonomyTermController.getTenantId(req);
+
+      // Paginated response
+      if (page) {
+        const pageNum = Math.max(1, parseInt(page, 10) || 1);
+        const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 25));
+        const result = await TaxonomyTermService.getPaginated(taxonomyId, tenantId, pageNum, limitNum, search);
+        return reply.send({ success: true, data: result });
+      }
 
       const list =
         active === 'true'

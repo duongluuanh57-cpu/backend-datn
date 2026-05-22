@@ -16,7 +16,7 @@ function slugify(text: string): string {
 
 export class TagService {
   /**
-   * Fetch all tags for the tenant
+   * Fetch all tags for the tenant (backward compat — full list)
    */
   static async getAllTags(tenantId: string): Promise<ITag[]> {
     let tags = await Tag.find({ tenantId, status: 'active' }).sort({ name: 1 });
@@ -50,6 +50,27 @@ export class TagService {
       }
     }
     return tags;
+  }
+
+  /**
+   * Fetch paginated tags for admin management
+   */
+  static async getPaginatedTags(
+    tenantId: string,
+    page: number = 1,
+    limit: number = 25,
+    search?: string
+  ): Promise<{ items: ITag[]; total: number; page: number; totalPages: number }> {
+    const query: Record<string, any> = { tenantId };
+    if (search) {
+      query.name = { $regex: search, $options: 'i' };
+    }
+    const skip = (page - 1) * limit;
+    const [items, total] = await Promise.all([
+      Tag.find(query).sort({ name: 1 }).skip(skip).limit(limit).lean(),
+      Tag.countDocuments(query),
+    ]);
+    return { items: items as unknown as ITag[], total, page, totalPages: Math.ceil(total / limit) };
   }
 
   /**

@@ -22,6 +22,9 @@ const TagSchema = new Schema<ITag>(
   }
 );
 
+// Compound index for paginated search + sort
+TagSchema.index({ tenantId: 1, name: 1 });
+
 TagSchema.plugin(multiTenancyPlugin);
 
 export const Tag = mongoose.models.Tag || mongoose.model<ITag>('Tag', TagSchema);

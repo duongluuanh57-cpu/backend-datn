@@ -45,6 +45,8 @@ const TaxonomyTermSchema = new Schema<ITaxonomyTerm>(
 
 // Unique slug per taxonomy per tenant
 TaxonomyTermSchema.index({ tenantId: 1, taxonomyId: 1, slug: 1 }, { unique: true });
+// Compound index for paginated search + sort by name
+TaxonomyTermSchema.index({ tenantId: 1, taxonomyId: 1, name: 1 });
 
 TaxonomyTermSchema.plugin(multiTenancyPlugin);
 

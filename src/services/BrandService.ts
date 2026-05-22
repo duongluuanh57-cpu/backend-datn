@@ -4,10 +4,42 @@ import { ImageService } from './ImageService.ts';
 
 export class BrandService {
   /**
-   * Lấy danh sách toàn bộ thương hiệu của tenant
+   * Lấy danh sách toàn bộ thương hiệu của tenant (không phân trang)
    */
   static async getAllBrands(tenantId: string): Promise<IBrand[]> {
     return await Brand.find({ tenantId }).sort({ name: 1 });
+  }
+
+  /**
+   * Lấy danh sách thương hiệu của tenant với phân trang, lọc
+   */
+  static async getPaginatedBrands(
+    tenantId: string,
+    options: { page: number; limit: number; search?: string; origin?: string }
+  ): Promise<{ items: IBrand[]; total: number; page: number; totalPages: number }> {
+    const { page, limit, search, origin } = options;
+
+    const query: any = { tenantId };
+
+    if (search) {
+      query.$or = [
+        { name: { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
+        { description: { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
+      ];
+    }
+
+    if (origin) {
+      query.origin = origin;
+    }
+
+    const total = await Brand.countDocuments(query);
+    const items = await Brand.find(query)
+      .sort({ name: 1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean();
+
+    return { items, total, page, totalPages: Math.ceil(total / limit) };
   }
 
   /**

@@ -4,16 +4,24 @@ import { TagService } from '../services/TagService.ts';
 export class TagController {
   /**
    * GET /api/tags
+   * Supports pagination when ?page= is provided, otherwise returns full list (backward compat)
    */
   static async getAllTags(req: FastifyRequest, reply: FastifyReply) {
     try {
       const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const { page, limit, search } = req.query as { page?: string; limit?: string; search?: string };
+
+      // If page param is provided, use paginated response
+      if (page) {
+        const pageNum = Math.max(1, parseInt(page, 10) || 1);
+        const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 25));
+        const result = await TagService.getPaginatedTags(tenantId, pageNum, limitNum, search);
+        return reply.status(200).send({ success: true, data: result });
+      }
+
+      // Legacy: return full list
       const tags = await TagService.getAllTags(tenantId);
-      
-      return reply.status(200).send({
-        success: true,
-        data: tags,
-      });
+      return reply.status(200).send({ success: true, data: tags });
     } catch (error: any) {
       return reply.status(500).send({
         success: false,

@@ -5,6 +5,16 @@ import { verifyRefreshToken, generateTokens, hashPassword, comparePassword } fro
 import { redis } from '../config/redis.ts';
 import { UnauthorizedError } from '../utils/errors.ts';
 import { UserRepository } from '../repositories/UserRepository.ts';
+import { User } from '../models/User.ts';
+import { Order } from '../models/Order.ts';
+import mongoose from 'mongoose';
+
+function computeMemberTier(totalSpent: number): 'MEMBER' | 'Bac' | 'Vang' | 'KimCuong' {
+  if (totalSpent >= 30_000_000) return 'KimCuong';
+  if (totalSpent >= 20_000_000) return 'Vang';
+  if (totalSpent >= 10_000_000) return 'Bac';
+  return 'MEMBER';
+}
 
 export class AuthController {
   static async register(request: FastifyRequest, reply: FastifyReply) {
@@ -198,22 +208,40 @@ export class AuthController {
     * GET /api/auth/me
     * Yêu cầu: Đã xác thực
     */
-   static async getMe(request: FastifyRequest, reply: FastifyReply) {
-     try {
-       const userId = (request as any).user?.userId;
-       if (!userId) throw new UnauthorizedError('Vui lòng đăng nhập');
- 
-       const user = await UserRepository.findById(userId);
-       if (!user) throw new UnauthorizedError('Người dùng không tồn tại');
- 
-       const { passwordHash, ...safeUser } = user as any;
- 
-       return reply.send({
-         success: true,
-         data: safeUser
-       });
-     } catch (err: any) {
-       return reply.status(500).send({ success: false, message: err.message });
-     }
-   }
+    static async getMe(request: FastifyRequest, reply: FastifyReply) {
+      try {
+        const userId = (request as any).user?.userId;
+        if (!userId) throw new UnauthorizedError('Vui lòng đăng nhập');
+  
+        let user = await User.findById(userId).lean();
+        if (!user) throw new UnauthorizedError('Người dùng không tồn tại');
+  
+        // Compute totalSpent từ các order đã delivered nếu chưa có
+        let totalSpent = (user as any).totalSpent || 0;
+        if (!totalSpent) {
+          const result = await Order.aggregate([
+            { $match: { userId: new mongoose.Types.ObjectId(userId), status: 'delivered' } },
+            { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+          ]);
+          totalSpent = (result[0]?.total || 0);
+          await User.findByIdAndUpdate(userId, { totalSpent });
+        }
+  
+        const tier = computeMemberTier(totalSpent);
+        if ((user as any).memberTier !== tier) {
+          await User.findByIdAndUpdate(userId, { memberTier: tier });
+          (user as any).memberTier = tier;
+        }
+        (user as any).totalSpent = totalSpent;
+  
+        const { passwordHash, ...safeUser } = user as any;
+  
+        return reply.send({
+          success: true,
+          data: safeUser
+        });
+      } catch (err: any) {
+        return reply.status(500).send({ success: false, message: err.message });
+      }
+    }
  }

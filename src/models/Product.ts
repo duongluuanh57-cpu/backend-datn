@@ -82,6 +82,14 @@ ProductSchema.post('save', async function() {
   }
 });
 
+// Compound indexes cho admin queries
+ProductSchema.index({ tenantId: 1, createdAt: -1 });
+ProductSchema.index({ tenantId: 1, name: 1 });
+ProductSchema.index({ tenantId: 1, brandId: 1 });
+ProductSchema.index({ tenantId: 1, quantityInStock: 1 });
+ProductSchema.index({ tenantId: 1, price: 1 });
+ProductSchema.index({ tenantId: 1, soldCount: -1, createdAt: -1 });
+
 ProductSchema.plugin(multiTenancyPlugin);
 
 export const Product = mongoose.models.Product || mongoose.model<IProduct>('Product', ProductSchema);

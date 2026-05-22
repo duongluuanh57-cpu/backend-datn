@@ -55,11 +55,31 @@ export class TaxonomyService {
 // ─────────────────────────────────────────────
 
 export class TaxonomyTermService {
-  /** Lấy tất cả terms của một taxonomy */
+  /** Lấy tất cả terms của một taxonomy (full list — backward compat) */
   static async getAll(taxonomyId: string, tenantId: string) {
     return TaxonomyTerm.find({ taxonomyId, tenantId })
       .sort({ sortOrder: 1, name: 1 })
       .lean();
+  }
+
+  /** Lấy paginated terms của một taxonomy (dùng cho admin management) */
+  static async getPaginated(
+    taxonomyId: string,
+    tenantId: string,
+    page: number = 1,
+    limit: number = 25,
+    search?: string
+  ) {
+    const query: Record<string, any> = { taxonomyId, tenantId };
+    if (search) {
+      query.name = { $regex: search, $options: 'i' };
+    }
+    const skip = (page - 1) * limit;
+    const [items, total] = await Promise.all([
+      TaxonomyTerm.find(query).sort({ sortOrder: 1, name: 1 }).skip(skip).limit(limit).lean(),
+      TaxonomyTerm.countDocuments(query),
+    ]);
+    return { items, total, page, totalPages: Math.ceil(total / limit) };
   }
 
   /** Lấy active terms — dùng cho dropdown/filter */

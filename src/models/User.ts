@@ -7,7 +7,8 @@ export interface IUser extends Document {
   email: string;
   passwordHash: string;
   role: 'USER' | 'ADMIN' | 'SUBADMIN';
-  memberTier: 'MEMBER' | 'VIP' | 'ELITE MEMBER';
+  memberTier: 'MEMBER' | 'Bac' | 'Vang' | 'KimCuong';
+  totalSpent: number;
   tenantId: string; // Thêm vào interface
   status: 'active' | 'inactive' | 'suspended'; // Trạng thái tài khoản
   twoFactorSecret?: string;
@@ -32,7 +33,8 @@ const UserSchema = new Schema<IUser>(
     email: { type: String, required: true, unique: true, index: true },
     passwordHash: { type: String },          // Optional với OAuth users (không có mật khẩu)
     role: { type: String, enum: ['USER', 'ADMIN', 'SUBADMIN'], default: 'USER' },
-    memberTier: { type: String, enum: ['MEMBER', 'VIP', 'ELITE MEMBER'], default: 'MEMBER' },
+    memberTier: { type: String, enum: ['MEMBER', 'Bac', 'Vang', 'KimCuong'], default: 'MEMBER' },
+    totalSpent: { type: Number, default: 0 },
     tenantId: { type: String, required: true, index: true }, // Đã bổ sung
     status: { type: String, enum: ['active', 'inactive', 'suspended'], default: 'active', index: true }, // Trạng thái tài khoản
     twoFactorSecret: { type: String },
@@ -53,6 +55,11 @@ const UserSchema = new Schema<IUser>(
     collection: 'users' // Ép trùng tên với collection 'users' trên DB của bạn
   }
 );
+
+UserSchema.index({ tenantId: 1, createdAt: -1 });
+UserSchema.index({ tenantId: 1, username: 1 });
+UserSchema.index({ tenantId: 1, email: 1 });
+UserSchema.index({ tenantId: 1, role: 1 });
 
 // Áp dụng Plugin Multi-tenancy
 UserSchema.plugin(multiTenancyPlugin);

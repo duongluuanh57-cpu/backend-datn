@@ -2,12 +2,34 @@ import { ProductTaxonomy, type TaxonomyType } from '../models/ProductTaxonomy.ts
 
 export class TaxonomyService {
   /**
-   * Lấy tất cả taxonomy theo type
+   * Lấy tất cả taxonomy theo type (full list — backward compat)
    */
   static async getAll(type: TaxonomyType, tenantId: string) {
     return ProductTaxonomy.find({ type, tenantId })
       .sort({ sortOrder: 1, name: 1 })
       .lean();
+  }
+
+  /**
+   * Lấy paginated taxonomy theo type (dùng cho admin management)
+   */
+  static async getPaginated(
+    type: TaxonomyType,
+    tenantId: string,
+    page: number = 1,
+    limit: number = 25,
+    search?: string
+  ) {
+    const query: Record<string, any> = { type, tenantId };
+    if (search) {
+      query.name = { $regex: search, $options: 'i' };
+    }
+    const skip = (page - 1) * limit;
+    const [items, total] = await Promise.all([
+      ProductTaxonomy.find(query).sort({ sortOrder: 1, name: 1 }).skip(skip).limit(limit).lean(),
+      ProductTaxonomy.countDocuments(query),
+    ]);
+    return { items, total, page, totalPages: Math.ceil(total / limit) };
   }
 
   /**

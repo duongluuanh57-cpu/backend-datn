@@ -2,6 +2,9 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import { Order } from '../models/Order.ts';
 import { OrderItem } from '../models/OrderItem.ts';
 import { User } from '../models/User.ts';
+import { Product } from '../models/Product.ts';
+import { ProductVariant } from '../models/ProductVariant.ts';
+import { ProductTaxonomyTerm } from '../models/ProductTaxonomyTerm.ts';
 import mongoose from 'mongoose';
 
 export class OrderController {
@@ -29,101 +32,8 @@ export class OrderController {
         });
       }
 
-      const tenantId = user.tenantId || 'default';
-
-      // Kiểm tra xem user đã có đơn hàng nào chưa
-      const orderCount = await Order.countDocuments({ userId: new mongoose.Types.ObjectId(userId) });
-
-      if (orderCount === 0) {
-        // Tạo 3 đơn hàng mẫu với items lưu vào order_items riêng
-        const dummyOrdersData = [
-          {
-            tenantId,
-            userId: new mongoose.Types.ObjectId(userId),
-            customerName: user.fullName || user.username,
-            customerEmail: user.email,
-            customerPhone: (user as any).phoneNumber || '0987654321',
-            totalAmount: 2450000,
-            status: 'delivered' as const,
-            createdAt: new Date('2026-04-12T14:30:00.000Z'),
-            items: [
-              {
-                productId: new mongoose.Types.ObjectId(),
-                name: "Nước hoa L'essence Royal Amber - 100ml",
-                quantity: 1,
-                price: 2450000,
-                image: 'https://i.ibb.co/C3Y4Vv7Y/perfume2.webp',
-              },
-            ],
-          },
-          {
-            tenantId,
-            userId: new mongoose.Types.ObjectId(userId),
-            customerName: user.fullName || user.username,
-            customerEmail: user.email,
-            customerPhone: (user as any).phoneNumber || '0987654321',
-            totalAmount: 1890000,
-            status: 'delivered' as const,
-            createdAt: new Date('2026-03-01T09:15:00.000Z'),
-            items: [
-              {
-                productId: new mongoose.Types.ObjectId(),
-                name: 'Midnight Rose Gold - 50ml',
-                quantity: 1,
-                price: 1890000,
-                image: 'https://i.ibb.co/qFf0N0kH/perfume1.webp',
-              },
-            ],
-          },
-          {
-            tenantId,
-            userId: new mongoose.Types.ObjectId(userId),
-            customerName: user.fullName || user.username,
-            customerEmail: user.email,
-            customerPhone: (user as any).phoneNumber || '0987654321',
-            totalAmount: 3120000,
-            status: 'delivered' as const,
-            createdAt: new Date('2026-01-15T16:45:00.000Z'),
-            items: [
-              {
-                productId: new mongoose.Types.ObjectId(),
-                name: 'Imperial Leather & Suede - 100ml',
-                quantity: 1,
-                price: 3120000,
-                image: 'https://i.ibb.co/VWV0pP0p/perfume3.webp',
-              },
-            ],
-          },
-        ];
-
-        for (const orderData of dummyOrdersData) {
-          const { items: embeddedItems, ...orderFields } = orderData;
-
-          // 1. Create the Order document (without items yet)
-          const newOrder = await Order.create({ ...orderFields, items: [] });
-
-          // 2. Create OrderItem documents referencing this order
-          const itemDocs = embeddedItems.map((item) => ({
-            tenantId,
-            orderId: newOrder._id,
-            productId: item.productId,
-            name: item.name,
-            quantity: item.quantity,
-            price: item.price,
-            image: item.image,
-          }));
-          const insertedItems = await OrderItem.insertMany(itemDocs);
-
-          // 3. Update the Order to reference the new OrderItem IDs
-          await Order.updateOne(
-            { _id: newOrder._id },
-            { $set: { items: insertedItems.map((i) => i._id) } }
-          );
-        }
-      }
-
-      // Xây dựng Query lọc theo khoảng ngày mua (startDate & endDate)
-      const { startDate, endDate } = req.query as { startDate?: string; endDate?: string };
+      // Xây dựng Query lọc theo khoảng ngày mua (startDate & endDate) và status
+      const { startDate, endDate, status } = req.query as { startDate?: string; endDate?: string; status?: string };
       const query: any = { userId: new mongoose.Types.ObjectId(userId) };
 
       if (startDate || endDate) {
@@ -141,11 +51,57 @@ export class OrderController {
         query.createdAt = dateQuery;
       }
 
+      if (status && status !== 'all') {
+        query.status = status;
+      }
+
       // Fetch đơn hàng và populate items từ order_items collection
       const orders = await Order.find(query)
         .populate('items')
         .sort({ createdAt: -1 })
         .lean();
+
+      // Collect tất cả productId từ items
+      const rawIds = orders.flatMap((o: any) =>
+        (o.items || []).map((i: any) => i.productId?.toString()).filter(Boolean)
+      );
+      const productIds = [...new Set(rawIds)].map((id) => new mongoose.Types.ObjectId(id as string));
+
+      if (productIds.length > 0) {
+        // Fetch variants cho từng product
+        const variants = await ProductVariant.find({ productId: { $in: productIds } }).lean();
+
+        // Fetch taxonomy cho từng product (kèm term + taxonomy name)
+        const taxonomyLinks = await ProductTaxonomyTerm.find({ productId: { $in: productIds } })
+          .populate({ path: 'termId', model: 'TaxonomyTerm', select: 'name slug' })
+          .populate({ path: 'taxonomyId', model: 'Taxonomy', select: 'slug name' })
+          .lean();
+
+        // Fetch product rating data
+        const productData = await Product.find(
+          { _id: { $in: productIds } },
+          { _id: 1, rating: 1, reviewsCount: 1 }
+        ).lean();
+
+        // Gắn variants, taxonomy và rating vào từng item
+        for (const order of orders as any[]) {
+          for (const item of order.items || []) {
+            const pid = item.productId?.toString();
+            item.variants = variants.filter((v: any) => v.productId?.toString() === pid);
+            item.taxonomy = taxonomyLinks
+              .filter((t: any) => t.productId?.toString() === pid)
+              .map((t: any) => ({
+                taxonomySlug: (t.taxonomyId as any)?.slug,
+                taxonomyName: (t.taxonomyId as any)?.name,
+                termName: (t.termId as any)?.name,
+                termSlug: (t.termId as any)?.slug,
+              }));
+            const prod = productData.find((p: any) => p._id.toString() === pid);
+            item.productRating = prod?.rating || 0;
+            item.productReviewsCount = prod?.reviewsCount || 0;
+          }
+        }
+      }
 
       return reply.status(200).send({
         success: true,
@@ -195,6 +151,40 @@ export class OrderController {
           success: false,
           message: 'Không tìm thấy đơn hàng của bạn',
         });
+      }
+
+      // Fetch variants + taxonomy cho items
+      const items = (order as any).items || [];
+      const rawIds = items.map((i: any) => i.productId?.toString()).filter(Boolean);
+      const productIds = [...new Set(rawIds)].map((id) => new mongoose.Types.ObjectId(id as string));
+
+      if (productIds.length > 0) {
+        const variants = await ProductVariant.find({ productId: { $in: productIds } }).lean();
+        const taxonomyLinks = await ProductTaxonomyTerm.find({ productId: { $in: productIds } })
+          .populate({ path: 'termId', model: 'TaxonomyTerm', select: 'name slug' })
+          .populate({ path: 'taxonomyId', model: 'Taxonomy', select: 'slug name' })
+          .lean();
+
+        const productData = await Product.find(
+          { _id: { $in: productIds } },
+          { _id: 1, rating: 1, reviewsCount: 1 }
+        ).lean();
+
+        for (const item of items) {
+          const pid = item.productId?.toString();
+          item.variants = variants.filter((v: any) => v.productId?.toString() === pid);
+          item.taxonomy = taxonomyLinks
+            .filter((t: any) => t.productId?.toString() === pid)
+            .map((t: any) => ({
+              taxonomySlug: (t.taxonomyId as any)?.slug,
+              taxonomyName: (t.taxonomyId as any)?.name,
+              termName: (t.termId as any)?.name,
+              termSlug: (t.termId as any)?.slug,
+            }));
+          const prod = productData.find((p: any) => p._id.toString() === pid);
+          item.productRating = prod?.rating || 0;
+          item.productReviewsCount = prod?.reviewsCount || 0;
+        }
       }
 
       return reply.status(200).send({

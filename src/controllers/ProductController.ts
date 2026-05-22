@@ -88,12 +88,32 @@ export class ProductController {
 
   /**
    * GET /api/products
+   * Query params: page, limit, search, brand, stock, tag, sortBy
    */
   static async getAllProducts(req: FastifyRequest, reply: FastifyReply) {
     try {
       const tenantId = (req as any).user?.tenantId || 'default-tenant';
-      const products = await ProductService.getAllProducts(tenantId);
-      return reply.status(200).send({ success: true, data: products });
+      const query = req.query as {
+        page?: string;
+        limit?: string;
+        search?: string;
+        brand?: string;
+        stock?: string;
+        tag?: string;
+        sortBy?: string;
+      };
+
+      const result = await ProductService.getAllProducts(tenantId, {
+        page: query.page ? parseInt(query.page, 10) : 1,
+        limit: query.limit ? parseInt(query.limit, 10) : 25,
+        search: query.search,
+        brand: query.brand,
+        stock: query.stock,
+        tag: query.tag,
+        sortBy: query.sortBy,
+      });
+
+      return reply.status(200).send({ success: true, data: result });
     } catch (error: any) {
       return reply.status(500).send({ success: false, message: error.message });
     }

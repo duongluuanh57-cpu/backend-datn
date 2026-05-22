@@ -45,8 +45,10 @@ const ProductTaxonomySchema = new Schema<IProductTaxonomy>(
   }
 );
 
-// Compound index: unique name per type per tenant
+// Compound index: unique slug per type per tenant
 ProductTaxonomySchema.index({ tenantId: 1, type: 1, slug: 1 }, { unique: true });
+// Compound index for paginated search + sort by name
+ProductTaxonomySchema.index({ tenantId: 1, type: 1, name: 1 });
 
 ProductTaxonomySchema.plugin(multiTenancyPlugin);
 

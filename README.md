@@ -165,12 +165,14 @@ npm run migrate:orders   # Migrate order items
 
 For detailed technical documentation:
 
-- **[Project Structure](./Docs/PROJECT_STRUCTURE.md)** - Architecture, layers, data flow
-- **[Tech Stack](./Docs/TECH_STACK.md)** - Technologies, why we chose them, benchmarks
-- **[API Conventions](./Docs/API_CONVENTIONS.md)** - Endpoints, request/response format, authentication
-- **[Coding Standards](./Docs/CODING_STANDARDS.md)** - TypeScript patterns, best practices, code review checklist
-- **[Database Schema](./Docs/DATABASE_SCHEMA.md)** - MongoDB collections, indexes, relationships
-- **[Environment Variables](./Docs/ENV_VARIABLES.md)** - Configuration guide, security best practices
+- **[Project Structure](./Docs/PROJECT_STRUCTURE.md)** — Architecture, layers, data flow, request lifecycle
+- **[Tech Stack](./Docs/TECH_STACK.md)** — Technologies, why we chose them, benchmarks
+- **[API Conventions](./Docs/API_CONVENTIONS.md)** — API design conventions, authentication, rate limiting
+- **[API Reference](./Docs/API_REFERENCE.md)** — Complete endpoint listing with request/response examples
+- **[Coding Standards](./Docs/CODING_STANDARDS.md)** — TypeScript patterns, best practices, code review checklist
+- **[Database Schema](./Docs/DATABASE_SCHEMA.md)** — All 18 MongoDB collections, indexes, relationships
+- **[AI Architecture](./Docs/AI_ARCHITECTURE.md)** — AI system deep dive (Gemini, LangGraph, RAG, Eval)
+- **[Environment Variables](./Docs/ENV_VARIABLES.md)** — Configuration guide, security best practices
 
 For feature details, see [FEATURES.md](./FEATURES.md)
 

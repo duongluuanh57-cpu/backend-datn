@@ -26,11 +26,20 @@ export class TaxonomyController {
     return (req as any).user?.tenantId || 'default-tenant';
   }
 
-  /** GET /api/taxonomies?type= */
+  /** GET /api/taxonomies?type= — supports ?page=&limit=&search= for pagination */
   static async getAll(req: FastifyRequest, reply: FastifyReply) {
     try {
       const type = TaxonomyController.getType(req);
       if (!type) return reply.status(400).send({ success: false, message: `type phải là một trong: ${VALID_TYPES.join(', ')}` });
+      const { page, limit, search } = req.query as { page?: string; limit?: string; search?: string };
+
+      if (page) {
+        const pageNum = Math.max(1, parseInt(page, 10) || 1);
+        const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 25));
+        const result = await TaxonomyService.getPaginated(type, TaxonomyController.getTenantId(req), pageNum, limitNum, search);
+        return reply.send({ success: true, data: result });
+      }
+
       const list = await TaxonomyService.getAll(type, TaxonomyController.getTenantId(req));
       return reply.send({ success: true, data: list });
     } catch (err: any) {

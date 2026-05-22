@@ -28,6 +28,9 @@ const BrandSchema = new Schema<IBrand>(
   }
 );
 
+BrandSchema.index({ tenantId: 1, name: 1 });
+BrandSchema.index({ tenantId: 1, origin: 1 });
+
 BrandSchema.plugin(multiTenancyPlugin);
 
 export const Brand = mongoose.models.Brand || mongoose.model<IBrand>('Brand', BrandSchema);

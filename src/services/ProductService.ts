@@ -335,15 +335,100 @@ export class ProductService {
   }
 
   /**
-   * Lấy tất cả sản phẩm của tenant
+   * Lấy tất cả sản phẩm của tenant với phân trang, lọc, sắp xếp
    */
-  static async getAllProducts(tenantId: string): Promise<any[]> {
-    const products = await Product.find({ tenantId })
+  static async getAllProducts(
+    tenantId: string,
+    options: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      brand?: string;
+      stock?: string;
+      tag?: string;
+      sortBy?: string;
+    } = {}
+  ): Promise<{ items: any[]; total: number; page: number; totalPages: number }> {
+    const { page = 1, limit = 25, search, brand, stock, tag, sortBy } = options;
+
+    const query: any = { tenantId };
+
+    // Tìm kiếm theo tên hoặc mô tả
+    if (search) {
+      query.$or = [
+        { name: { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
+        { description: { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
+      ];
+    }
+
+    // Lọc theo thương hiệu
+    if (brand) {
+      const brandDoc = await Brand.findOne({ name: { $regex: `^\\s*${brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, $options: 'i' }, tenantId });
+      if (brandDoc) {
+        query.brandId = brandDoc._id;
+      } else {
+        return { items: [], total: 0, page, totalPages: 0 };
+      }
+    }
+
+    // Lọc theo tồn kho
+    if (stock === 'inStock') {
+      query.quantityInStock = { $gt: 0 };
+    } else if (stock === 'lowStock') {
+      query.quantityInStock = { $gt: 0, $lt: 10 };
+    }
+
+    // Lọc theo tag (case-insensitive slug & name)
+    if (tag && tag !== 'all') {
+      const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const tagDoc = await Tag.findOne({ tenantId, $or: [{ slug: { $regex: `^${escapedTag}$`, $options: 'i' } }, { name: { $regex: `^${escapedTag}$`, $options: 'i' } }] });
+      if (tagDoc) {
+        const productLinks = await ProductTag.find({ tagId: tagDoc._id, tenantId }).lean();
+        const productIds = productLinks.map(l => l.productId);
+        if (productIds.length === 0) {
+          return { items: [], total: 0, page, totalPages: 0 };
+        }
+        if (query._id) {
+          // Nếu đã có _id filter (từ brand), merge
+          const existingIds = query._id.$in ? query._id.$in : [query._id];
+          query._id = { $in: existingIds.filter(id => productIds.some(pid => pid.equals(id))) };
+        } else {
+          query._id = { $in: productIds };
+        }
+      } else {
+        return { items: [], total: 0, page, totalPages: 0 };
+      }
+    }
+
+    // Sắp xếp
+    let sort: any = { createdAt: -1 };
+    switch (sortBy) {
+      case 'priceAsc': sort = { price: 1 }; break;
+      case 'priceDesc': sort = { price: -1 }; break;
+      case 'stockAsc': sort = { quantityInStock: 1 }; break;
+      case 'stockDesc': sort = { quantityInStock: -1 }; break;
+      case 'rating': sort = { rating: -1, reviewsCount: -1 }; break;
+      case 'newest': sort = { createdAt: -1 }; break;
+      case 'bestSeller': sort = { soldCount: -1, createdAt: -1 }; break;
+    }
+
+    const total = await Product.countDocuments(query);
+
+    const products = await Product.find(query)
       .populate('brandId')
-      .sort({ createdAt: -1 })
+      .sort(sort)
+      .skip((page - 1) * limit)
+      .limit(limit)
       .lean();
 
-    return await this.formatMultipleProducts(products, tenantId);
+    const items = await this.formatMultipleProducts(products, tenantId);
+
+    return {
+      items,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   /**
