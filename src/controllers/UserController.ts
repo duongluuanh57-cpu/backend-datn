@@ -39,17 +39,60 @@ export class UserController {
   }
 
   /**
+   * GET /api/users/:id
+   * Lấy thông tin chi tiết người dùng
+   */
+  static async getUserById(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { id } = request.params as { id: string };
+
+      const user = await UserRepository.findById(id);
+      if (!user) {
+        return reply.status(404).send({
+          success: false,
+          message: 'Không tìm thấy người dùng',
+        });
+      }
+
+      const { passwordHash, ...safeUser } = user as any;
+      return reply.send({ success: true, data: safeUser });
+    } catch (error: any) {
+      return reply.status(500).send({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
    * PATCH /api/users/:id
    * Cập nhật thông tin người dùng
    */
   static async updateUser(request: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = request.params as { id: string };
-      const data = request.body as any;
-      
-      // Bảo mật: Không cho phép đổi role qua đây nếu không phải Super Admin
-      // (Trong bài tập này chúng ta giả định admin có thể cập nhật)
-      
+      const body = request.body as any;
+
+      // Chỉ cho phép cập nhật các field an toàn
+      const allowedFields = [
+        'username', 'email', 'fullName', 'phoneNumber', 'gender',
+        'address', 'province', 'district',
+        'role', 'memberTier', 'status', 'twoFactorEnabled',
+      ];
+      const data: Record<string, any> = {};
+      for (const field of allowedFields) {
+        if (body[field] !== undefined) {
+          data[field] = body[field];
+        }
+      }
+
+      if (Object.keys(data).length === 0) {
+        return reply.status(400).send({
+          success: false,
+          message: 'Không có trường nào được gửi để cập nhật',
+        });
+      }
+
       const user = await UserRepository.update(id, data);
       if (!user) {
         return reply.status(404).send({
@@ -58,10 +101,11 @@ export class UserController {
         });
       }
 
+      const { passwordHash, ...safeUser } = user as any;
       return reply.send({
         success: true,
         message: 'Cập nhật thành công',
-        data: user,
+        data: safeUser,
       });
     } catch (error: any) {
       return reply.status(500).send({

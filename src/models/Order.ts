@@ -9,6 +9,8 @@ export interface IOrder extends Document {
   customerPhone?: string;
   customerAddress?: string;
   totalAmount: number;
+  voucherId?: mongoose.Types.ObjectId; // Reference to Voucher
+  discountAmount?: number; // Số tiền được giảm từ voucher
   status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
   paymentMethod: 'cod' | 'bank_transfer' | 'credit_card' | 'momo' | 'zalopay';
   paymentStatus: 'unpaid' | 'paid' | 'refunded';
@@ -26,6 +28,8 @@ const OrderSchema = new Schema<IOrder>(
     customerPhone: { type: String },
     customerAddress: { type: String },
     totalAmount: { type: Number, required: true },
+    voucherId: { type: Schema.Types.ObjectId, ref: 'Voucher' },
+    discountAmount: { type: Number, default: 0 },
     status: {
       type: String,
       enum: ['pending', 'processing', 'shipped', 'delivered', 'cancelled'],

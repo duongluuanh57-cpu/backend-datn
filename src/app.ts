@@ -23,6 +23,7 @@ import { segmentRoutes } from './routes/segment.routes.ts'; // DEPRECATED — ke
 import { orderRoutes } from './routes/order.routes.ts';
 import { taxonomyRoutes } from './routes/taxonomy.routes.ts';
 import { taxonomyV2Routes } from './routes/taxonomy-v2.routes.ts';
+import { voucherRoutes } from './routes/voucher.routes.ts';
 // Đảm bảo các model mới được đăng ký với Mongoose khi app khởi động
 import './models/Taxonomy.ts';
 import './models/TaxonomyTerm.ts';
@@ -79,7 +80,9 @@ export function buildApp(): FastifyInstance {
 
   app.register(compress);
   
+  // TEMP: Disable rate limit for debugging
   // Rate Limiting: Dynamic (GUEST: 100/min, USER: 500/min, ADMIN: Unlimit)
+  /*
   app.register(rateLimit, {
     max: (request: any) => {
       const user = (request as any).user;
@@ -92,6 +95,7 @@ export function buildApp(): FastifyInstance {
       return (request as any).user?._id?.toString() || request.ip;
     }
   });
+  */
 
   // Routes
   app.register(authRoutes, { prefix: '/api/auth' });
@@ -114,6 +118,7 @@ export function buildApp(): FastifyInstance {
   app.register(orderRoutes, { prefix: '/api/orders' });
   app.register(userAddressRoutes, { prefix: '/api/user-addresses' });
   app.register(homepageConfigRoutes, { prefix: '/api/homepage-config' });
+  app.register(voucherRoutes, { prefix: '/api/vouchers' });
 
   // Global Error Handler
   app.setErrorHandler(errorHandler);

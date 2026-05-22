@@ -9,6 +9,7 @@ export interface IProduct extends Document {
   variants?: mongoose.Types.ObjectId[]; // References to ProductVariant
 
   description: string;
+  image?: string; // URL ảnh chính (denormalized từ ProductImage)
   // tags đã được chuyển sang bảng trung gian ProductTag
   // scentGroups, concentrations, segments đã được chuyển sang bảng trung gian ProductTaxonomyTerm
   gender?: string;
@@ -32,6 +33,7 @@ const ProductSchema = new Schema<IProduct>(
     variants: [{ type: Schema.Types.ObjectId, ref: 'ProductVariant' }],
 
     description: { type: String },
+    image: { type: String },
     // tags đã được chuyển sang ProductTag (bảng trung gian)
     gender: { type: String },
     rating: { type: Number, default: 5 },

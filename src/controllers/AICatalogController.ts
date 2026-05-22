@@ -3,6 +3,7 @@ import { AIService } from '../services/AIService.ts';
 import { TaxonomyTerm } from '../models/TaxonomyTerm.ts';
 import { Taxonomy } from '../models/Taxonomy.ts';
 import { Tag } from '../models/Tag.ts';
+import { Brand } from '../models/Brand.ts';
 import { redis } from '../config/redis.ts';
 
 export class AICatalogController {
@@ -72,13 +73,14 @@ export class AICatalogController {
         availableSizes || ['2ml', '5ml', '10ml', '30ml', '50ml', '75ml', '100ml', '125ml', '150ml']
       );
 
-      // ── OPTIMIZATION 1: Pre-fetch tất cả taxonomy & tag song song ──────────
+      // ── OPTIMIZATION 1: Pre-fetch tất cả taxonomy, tag & brand song song ──────────
       // Thay vì query DB nhiều lần sau khi AI trả về → fetch 1 lần ngay từ đầu
-      console.log(`🚀 [AI generateProduct] Pre-fetching taxonomies & tags in parallel for: ${name}`);
-      const [allTaxonomies, allTags] = await Promise.all([
+      console.log(`🚀 [AI generateProduct] Pre-fetching taxonomies, tags & brands in parallel for: ${name}`);
+      const [allTaxonomies, allTags, allBrands] = await Promise.all([
         // Lấy tất cả TaxonomyTerm mới, kèm taxonomyId để group theo slug
         TaxonomyTerm.find({ tenantId, status: 'active' }).populate({ path: 'taxonomyId', model: 'Taxonomy', select: 'slug' }).lean(),
-        Tag.find({ tenantId, status: 'active' }).lean()
+        Tag.find({ tenantId, status: 'active' }).lean(),
+        Brand.find({ tenantId, status: 'active' }).lean()
       ]);
 
       // Group terms by taxonomy slug để O(1) lookup
@@ -253,6 +255,21 @@ Output ONLY a raw valid JSON object. No markdown, no code blocks.
         productInfo.tag = resolvedTagNames.join(',');
       } else {
         delete productInfo.tag;
+      }
+
+      // Brand matching (in-memory)
+      if (productInfo.brand && allBrands.length > 0) {
+        const norm = normStr(String(productInfo.brand));
+        const matchedBrand =
+          allBrands.find(b => normStr(b.name) === norm) ||
+          allBrands.find(b => normStr(b.name).includes(norm) || norm.includes(normStr(b.name)));
+        if (matchedBrand) {
+          productInfo.brandId = matchedBrand._id;
+          productInfo.brand = matchedBrand.name; // Đảm bảo trả về đúng tên từ DB
+          console.log(`✅ Brand resolved: ${matchedBrand.name} (ID: ${matchedBrand._id})`);
+        } else {
+          console.warn(`⚠️ Brand "${productInfo.brand}" not found in database, keeping as-is`);
+        }
       }
 
       const presetImages = [

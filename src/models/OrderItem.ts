@@ -9,7 +9,6 @@ export interface IOrderItem extends Document {
   brand?: string;
   quantity: number;
   price: number;
-  subTotal: number; // quantity * price
   image?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -24,7 +23,6 @@ const OrderItemSchema = new Schema<IOrderItem>(
     brand: { type: String },
     quantity: { type: Number, required: true, min: 1 },
     price: { type: Number, required: true },
-    subTotal: { type: Number, required: true },
     image: { type: String },
   },
   {

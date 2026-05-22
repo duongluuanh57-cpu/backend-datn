@@ -1,8 +1,8 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { TaxonomyService } from '../services/TaxonomyService.ts';
-import type { TaxonomyType } from '../models/ProductTaxonomy.ts';
+import type { TaxonomySlug } from '../models/Taxonomy.ts';
 
-const VALID_TYPES: TaxonomyType[] = ['segment', 'scent_group', 'concentration'];
+const VALID_TYPES: TaxonomySlug[] = ['segment', 'scent_group', 'concentration'];
 
 /**
  * TaxonomyController — unified controller for segments, scent_groups, concentrations
@@ -16,10 +16,10 @@ const VALID_TYPES: TaxonomyType[] = ['segment', 'scent_group', 'concentration'];
  * DELETE /api/taxonomies/:id                  — xóa
  */
 export class TaxonomyController {
-  private static getType(req: FastifyRequest): TaxonomyType | null {
+  private static getType(req: FastifyRequest): TaxonomySlug | null {
     const { type } = (req.query as any);
     if (!type || !VALID_TYPES.includes(type)) return null;
-    return type as TaxonomyType;
+    return type as TaxonomySlug;
   }
 
   private static getTenantId(req: FastifyRequest): string {

@@ -8,6 +8,7 @@ export async function userRoutes(app: FastifyInstance) {
   app.addHook('preHandler', requireRole('ADMIN', 'SUBADMIN'));
 
   app.get('/', UserController.getAllUsers);
+  app.get('/:id', UserController.getUserById);
   app.patch('/:id', UserController.updateUser);
   app.patch('/:id/role', UserController.updateUserRole);
   app.delete('/:id', UserController.deleteUser);

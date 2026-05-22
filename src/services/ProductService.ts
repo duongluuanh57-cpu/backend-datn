@@ -168,7 +168,7 @@ export class ProductService {
    */
   static async getNewProducts(tenantId: string): Promise<any[]> {
     const cacheKey = `products:new:tag:v3:${tenantId}`;
-    
+
     try {
       const cached = await redis.get(cacheKey);
       if (cached) return JSON.parse(cached);
@@ -238,7 +238,7 @@ export class ProductService {
    */
   static async getTrendingProducts(tenantId: string): Promise<any[]> {
     const cacheKey = `products:trending:tag:v3:${tenantId}`;
-    
+
     try {
       const cached = await redis.get(cacheKey);
       if (cached) return JSON.parse(cached);
@@ -273,7 +273,7 @@ export class ProductService {
    */
   static async getSaleProducts(tenantId: string): Promise<any[]> {
     const cacheKey = `products:sale:tag:${tenantId}`;
-    
+
     try {
       const cached = await redis.get(cacheKey);
       if (cached) return JSON.parse(cached);
@@ -283,7 +283,7 @@ export class ProductService {
 
     const saleProductIds = await this.getProductIdsByTagSlugs(['sale', 'giam-gia'], tenantId);
     const now = new Date();
-    
+
     const queryBase: any = {
       tenantId,
       discountPercentage: { $gt: 0 }
@@ -438,7 +438,7 @@ export class ProductService {
     const product = await Product.findOne({ _id: id, tenantId })
       .populate('brandId')
       .lean();
-    
+
     if (!product) return null;
 
     const images = await ProductImage.find({ productId: id, tenantId }).lean();
@@ -621,8 +621,8 @@ export class ProductService {
           seoData.keywords = Array.isArray(data.keywords)
             ? data.keywords
             : typeof data.keywords === 'string'
-            ? data.keywords.split(',').map((k: string) => k.trim()).filter(Boolean)
-            : [];
+              ? data.keywords.split(',').map((k: string) => k.trim()).filter(Boolean)
+              : [];
         }
         if (data.priceReport !== undefined) seoData.priceReport = data.priceReport;
         if (data.sizeReport !== undefined) seoData.sizeReport = data.sizeReport;
@@ -648,7 +648,7 @@ export class ProductService {
       await redis.del(`products:trending:tag:v3:${tenantId}`);
       await redis.del(`products:${id}:${tenantId}`);
     }
-    
+
     return updatedProduct;
   }
 
@@ -722,7 +722,7 @@ export class ProductService {
    */
   static async bulkDeleteProducts(ids: string[], tenantId: string): Promise<boolean> {
     if (!ids || ids.length === 0) return false;
-    
+
     // Fetch products and images before deletion from DB
     const products = await Product.find({ _id: { $in: ids }, tenantId }).lean();
     const images = await ProductImage.find({ productId: { $in: ids }, tenantId }).lean();
@@ -801,13 +801,41 @@ export class ProductService {
     if (data.discountPercentage !== undefined) productData.discountPercentage = data.discountPercentage;
     if (data.discountStartDate !== undefined) productData.discountStartDate = data.discountStartDate;
     if (data.discountEndDate !== undefined) productData.discountEndDate = data.discountEndDate;
+    if (data.image !== undefined) productData.image = data.image;
     if (data.keywords !== undefined) productData.keywords = data.keywords;
 
-    // Brand mapping - chỉ tìm, KHÔNG tạo mới (case-insensitive, bỏ qua khoảng trắng thừa)
+    // Brand mapping - Ưu tiên brandId, fallback sang tên brand (case-insensitive, bỏ qua khoảng trắng thừa)
     if (data.brand) {
-      const brandNameRegex = new RegExp(`^\\s*${data.brand.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
-      const brandDoc = await Brand.findOne({ name: brandNameRegex, tenantId });
-      console.log(`🔍 [Brand] Tìm "${data.brand}" (tenantId: ${tenantId}) → ${brandDoc ? `Tìm thấy: ${brandDoc.name}` : 'KHÔNG TÌM THẤY'}`);
+      let brandDoc;
+      const trimmedBrand = data.brand.trim();
+
+      // Kiểm tra xem có phải là ObjectId hợp lệ không (24 hex characters)
+      const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(trimmedBrand);
+
+      if (isValidObjectId) {
+        // Tìm theo ID trước (ưu tiên)
+        brandDoc = await Brand.findOne({ _id: trimmedBrand, tenantId });
+        if (brandDoc) {
+          console.log(`🔍 [Brand] Tìm theo ID "${trimmedBrand}" (tenantId: ${tenantId}) → Tìm thấy: "${brandDoc.name}"`);
+        } else {
+          console.log(`⚠️ [Brand] ID "${trimmedBrand}" không tìm thấy, thử tìm theo tên...`);
+        }
+      }
+
+      // Nếu không tìm thấy theo ID hoặc không phải ObjectId, tìm theo tên
+      if (!brandDoc) {
+        // Thử match chính xác trước
+        brandDoc = await Brand.findOne({ name: trimmedBrand, tenantId });
+        if (!brandDoc) {
+          // Fallback: case-insensitive + trim cả 2 bên
+          const allBrands = await Brand.find({ tenantId }).lean();
+          brandDoc = allBrands.find(b =>
+            b.name.trim().toLowerCase() === trimmedBrand.toLowerCase()
+          );
+        }
+        console.log(`🔍 [Brand] Tìm theo tên "${trimmedBrand}" (raw: "${data.brand}") (tenantId: ${tenantId}) → ${brandDoc ? `Tìm thấy: "${brandDoc.name}"` : 'KHÔNG TÌM THẤY'}`);
+      }
+
       if (brandDoc) {
         productData.brandId = brandDoc._id;
       } else {
@@ -914,8 +942,8 @@ export class ProductService {
       const keywordsArray = Array.isArray(data.keywords)
         ? data.keywords
         : typeof data.keywords === 'string'
-        ? data.keywords.split(',').map((k: string) => k.trim()).filter(Boolean)
-        : [];
+          ? data.keywords.split(',').map((k: string) => k.trim()).filter(Boolean)
+          : [];
 
       const seoDoc = await ProductSEO.create({
         tenantId,
@@ -943,7 +971,7 @@ export class ProductService {
     } catch (err) {
       console.warn('Failed to clear product caches on creation:', err);
     }
-    
+
     return saved;
   }
 }
