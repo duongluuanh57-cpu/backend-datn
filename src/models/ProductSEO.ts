@@ -23,7 +23,7 @@ export interface IProductSEO extends Document {
 const ProductSEOSchema = new Schema<IProductSEO>(
   {
     tenantId: { type: String, required: true, index: true },
-    productId: { type: Schema.Types.ObjectId, ref: 'Product', index: true },
+    productId: { type: Schema.Types.ObjectId, ref: 'Product', unique: true, index: true },
     metaTitle: { type: String },
     metaDescription: { type: String },
     keywords: [{ type: String }],

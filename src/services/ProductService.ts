@@ -460,18 +460,42 @@ export class ProductService {
     let seoData: any = {};
     try {
       const { ProductSEO } = await import('../models/ProductSEO.ts');
-      const seoDoc = await ProductSEO.findOne({ productId: new mongoose.Types.ObjectId(id), tenantId }).lean();
-      if (seoDoc) {
-        seoData = {
-          metaTitle: seoDoc.metaTitle || '',
-          metaDescription: seoDoc.metaDescription || '',
-          keywords: seoDoc.keywords || [],
-          slug: seoDoc.slug || '',
-          priceReport: seoDoc.priceReport || '',
-          sizeReport: seoDoc.sizeReport || '',
-          discountReport: seoDoc.discountReport || '',
-        };
+      let seoDoc = await ProductSEO.findOne({ productId: new mongoose.Types.ObjectId(id), tenantId }).lean();
+      if (!seoDoc) {
+        seoDoc = await ProductSEO.findOneAndUpdate(
+          { productId: new mongoose.Types.ObjectId(id), tenantId },
+          {
+            $set: {
+              slug: product.name ? slugify(product.name) : '',
+              metaTitle: product.name || '',
+              metaDescription: '',
+              keywords: [],
+              priceReport: '',
+              sizeReport: '',
+              discountReport: '',
+            },
+            $setOnInsert: { tenantId, productId: new mongoose.Types.ObjectId(id) }
+          },
+          { upsert: true, new: true }
+        ).lean();
+      } else {
+        const updates: Record<string, any> = {};
+        if (!seoDoc.metaTitle && product.name) updates.metaTitle = product.name;
+        if (!seoDoc.slug && product.name) updates.slug = slugify(product.name);
+        if (Object.keys(updates).length > 0) {
+          await ProductSEO.updateOne({ _id: seoDoc._id }, { $set: updates });
+          Object.assign(seoDoc, updates);
+        }
       }
+      seoData = {
+        metaTitle: seoDoc.metaTitle || '',
+        metaDescription: seoDoc.metaDescription || '',
+        keywords: seoDoc.keywords || [],
+        slug: seoDoc.slug || '',
+        priceReport: seoDoc.priceReport || '',
+        sizeReport: seoDoc.sizeReport || '',
+        discountReport: seoDoc.discountReport || '',
+      };
     } catch (err) {
       console.error('Failed to fetch ProductSEO in getProductById:', err);
     }
@@ -839,7 +863,7 @@ export class ProductService {
       if (brandDoc) {
         productData.brandId = brandDoc._id;
       } else {
-        throw new Error(`Brand "${data.brand}" không tồn tại trong hệ thống. Vui lòng tạo brand trước.`);
+        throw new Error('Vui lòng kiểm tra lại tên hãng.');
       }
     } else {
       throw new Error('brand là bắt buộc khi tạo sản phẩm.');
@@ -945,17 +969,22 @@ export class ProductService {
           ? data.keywords.split(',').map((k: string) => k.trim()).filter(Boolean)
           : [];
 
-      const seoDoc = await ProductSEO.create({
-        tenantId,
-        productId: saved._id,
-        metaTitle: data.metaTitle,
-        metaDescription: data.metaDescription,
-        slug: data.slug,
-        keywords: keywordsArray,
-        priceReport: data.priceReport,
-        sizeReport: data.sizeReport,
-        discountReport: data.discountReport,
-      });
+      await ProductSEO.findOneAndUpdate(
+        { productId: saved._id, tenantId },
+        {
+          $set: {
+            metaTitle: data.metaTitle || '',
+            metaDescription: data.metaDescription || '',
+            slug: data.slug || '',
+            keywords: keywordsArray,
+            priceReport: data.priceReport || '',
+            sizeReport: data.sizeReport || '',
+            discountReport: data.discountReport || '',
+          },
+          $setOnInsert: { tenantId, productId: saved._id }
+        },
+        { upsert: true, new: true }
+      );
     } catch (err) {
       console.error('Failed to save ProductSEO in createProduct:', err);
     }

@@ -75,7 +75,17 @@ ProductSchema.post('save', async function() {
       { productId: this._id, tenantId: this.tenantId },
       {
         $set: { embedding: vector },
-        $setOnInsert: { tenantId: this.tenantId, productId: this._id }
+        $setOnInsert: {
+          tenantId: this.tenantId,
+          productId: this._id,
+          slug: this.name ? this.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') : '',
+          metaTitle: this.name || '',
+          metaDescription: '',
+          keywords: [],
+          priceReport: '',
+          sizeReport: '',
+          discountReport: '',
+        }
       },
       { upsert: true, new: true }
     );
