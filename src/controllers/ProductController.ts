@@ -1,6 +1,5 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { ProductService } from '../services/ProductService.ts';
-import { ProductImageService } from '../services/ProductImageService.ts';
 
 export class ProductController {
   /**
