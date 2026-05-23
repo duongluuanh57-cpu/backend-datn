@@ -7,12 +7,41 @@ if (!redisUrl) {
 }
 
 export const redis = new Redis(redisUrl || 'redis://127.0.0.1:6379', {
-  maxRetriesPerRequest: null,
-  lazyConnect: true // Không kết nối ngay lúc khởi tạo file
+  maxRetriesPerRequest: 3, // Thay vì null - retry tối đa 3 lần cho mỗi request
+  retryStrategy: (times: number) => {
+    const delay = Math.min(times * 50, 2000); // Exponential backoff: 50ms, 100ms, 150ms, max 2s
+    console.warn(`⚠️ [Redis] Retrying connection (attempt ${times}), next retry in ${delay}ms`);
+    return delay;
+  },
+  lazyConnect: true, // Không kết nối ngay lúc khởi tạo file
+  enableReadyCheck: true, // Kiểm tra Redis ready trước khi dùng
+  keepAlive: 30000, // Keep-alive mỗi 30s
+});
+
+let redisAvailable = true; // Track Redis availability status
+
+redis.on('connect', () => {
+  console.log('📡 Redis: Connected successfully');
+  redisAvailable = true;
+});
+
+redis.on('ready', () => {
+  console.log('✅ Redis: Ready to accept commands');
+  redisAvailable = true;
 });
 
 redis.on('error', (err: any) => {
-  console.error('Redis lỗi', err);
+  console.error('❌ Redis error:', err.message);
+  redisAvailable = false;
+});
+
+redis.on('close', () => {
+  console.warn('⚠️ Redis: Connection closed');
+  redisAvailable = false;
+});
+
+redis.on('reconnecting', () => {
+  console.log('🔄 Redis: Reconnecting...');
 });
 
 export async function connectRedis() {
@@ -22,9 +51,77 @@ export async function connectRedis() {
       await redis.connect();
     }
     console.log('📡 Redis: Connection established successfully');
+    redisAvailable = true;
   } catch (error) {
     if ((error as any).message !== 'Redis is already connecting/connected') {
-      console.error('Kết nối đến Redis thất bại', error);
+      console.error('❌ Kết nối đến Redis thất bại:', error);
+      redisAvailable = false;
     }
+  }
+}
+
+// Health check function để kiểm tra Redis availability
+export async function checkRedisHealth(): Promise<boolean> {
+  try {
+    if (redis.status !== 'ready') {
+      return false;
+    }
+    await redis.ping();
+    redisAvailable = true;
+    return true;
+  } catch (error) {
+    console.error('❌ Redis health check failed:', error);
+    redisAvailable = false;
+    return false;
+  }
+}
+
+// Helper function để kiểm tra Redis availability trước khi dùng
+export function isRedisAvailable(): boolean {
+  return redisAvailable && redis.status === 'ready';
+}
+
+// Safe Redis get với fallback
+export async function safeRedisGet(key: string): Promise<string | null> {
+  if (!isRedisAvailable()) {
+    return null;
+  }
+  try {
+    return await redis.get(key);
+  } catch (error) {
+    console.error(`❌ Redis get failed for key ${key}:`, error);
+    redisAvailable = false;
+    return null;
+  }
+}
+
+// Safe Redis set với fallback
+export async function safeRedisSet(key: string, value: string, mode?: string, duration?: number): Promise<'OK' | null> {
+  if (!isRedisAvailable()) {
+    return null;
+  }
+  try {
+    if (mode && duration) {
+      return await redis.set(key, value, mode, duration);
+    }
+    return await redis.set(key, value);
+  } catch (error) {
+    console.error(`❌ Redis set failed for key ${key}:`, error);
+    redisAvailable = false;
+    return null;
+  }
+}
+
+// Safe Redis del với fallback
+export async function safeRedisDel(...keys: string[]): Promise<number> {
+  if (!isRedisAvailable()) {
+    return 0;
+  }
+  try {
+    return await redis.del(...keys);
+  } catch (error) {
+    console.error(`❌ Redis del failed for keys ${keys.join(', ')}:`, error);
+    redisAvailable = false;
+    return 0;
   }
 }

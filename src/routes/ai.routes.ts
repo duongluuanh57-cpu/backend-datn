@@ -79,4 +79,8 @@ export async function aiRoutes(app: FastifyInstance) {
   server.post('/scan-gallery-image', {
     handler: AIVisionController.scanGalleryImage,
   });
+    // GET /api/ai/health - Health check cho AI services
+  server.get('/health', {
+    handler: AICoreController.healthCheck,
+  });
 }

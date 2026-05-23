@@ -19,14 +19,71 @@ export class AgentService {
   private static CACHE_TTL = 60 * 60 * 24; // 24 giờ
 
   // Model Gemini 3.1
+    // Model Gemini 3.1 với API Key validation
   private static get gemini() {
     if (!this._gemini) {
-      this._gemini = new ChatGoogleGenerativeAI({
-        apiKey: process.env.GEMINI_API_KEY,
-        model: "gemini-3.1-flash-lite",
-      });
+      try {
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey || apiKey.trim() === '' || apiKey === 'your_gemini_api_key') {
+          throw new Error(
+            '❌ GEMINI_API_KEY is not configured for AgentService. ' +
+            'Please set a valid GEMINI_API_KEY in your environment variables.'
+          );
+        }
+        if (apiKey.length < 20) {
+          throw new Error(
+            '❌ GEMINI_API_KEY appears to be invalid (too short) for AgentService. ' +
+            'Please check your API key configuration.'
+          );
+        }
+        
+        this._gemini = new ChatGoogleGenerativeAI({
+          apiKey: apiKey,
+          model: "gemini-3.1-flash-lite",
+        });
+        console.log('✅ [AgentService] LangGraph Gemini client initialized successfully');
+      } catch (error: any) {
+        console.error('❌ [AgentService] Failed to initialize AI client:', error.message);
+        throw error;
+      }
     }
     return this._gemini;
+  }
+
+  // Health check cho AgentService
+  static async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy', details: any }> {
+    try {
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey || apiKey.trim() === '' || apiKey === 'your_gemini_api_key') {
+        throw new Error('GEMINI_API_KEY not configured');
+      }
+      
+      const client = this.gemini;
+      const response = await client.invoke([
+        ["system", "You are a helpful assistant."],
+        ["user", "Hello"]
+      ]);
+      
+      return {
+        status: 'healthy',
+        details: {
+          apiKeyConfigured: true,
+          model: "gemini-3.1-flash-lite",
+          testResponse: typeof response.content === 'string' 
+            ? response.content.substring(0, 50) + '...' 
+            : 'Response received'
+        }
+      };
+    } catch (error: any) {
+      return {
+        status: 'unhealthy',
+        details: {
+          error: error.message,
+          apiKeyConfigured: !!process.env.GEMINI_API_KEY,
+          apiKeyLength: process.env.GEMINI_API_KEY?.length || 0
+        }
+      };
+    }
   }
 
   private static generateCacheKey(task: string): string {
