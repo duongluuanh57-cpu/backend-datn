@@ -866,7 +866,7 @@ export class ProductService {
         throw new Error('Vui lòng kiểm tra lại tên hãng.');
       }
     } else {
-      throw new Error('brand là bắt buộc khi tạo sản phẩm.');
+      throw new Error('Vui lòng kiểm tra lại tên hãng.');
     }
 
     // Tags mapping — ghi vào bảng trung gian ProductTag sau khi save

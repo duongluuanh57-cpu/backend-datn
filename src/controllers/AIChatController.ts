@@ -1,7 +1,10 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
 import { AIService } from '../services/AIService.ts';
 import { SearchService } from '../services/SearchService.ts';
 import { redisService } from '../services/RedisService.ts';
+import { DocsService } from '../services/DocsService.ts';
+import { AdminToolService } from '../services/AdminToolService.ts';
 import { Knowledge } from '../models/Knowledge.ts';
 import { Product } from '../models/Product.ts';
 import { Brand } from '../models/Brand.ts';
@@ -92,12 +95,11 @@ export class AIChatController {
         context = `DANH SÁCH SẢN PHẨM KHỚP NHẤT:\n${products.map(p => `- ${p.name} (Hãng: ${p.brand}): [CARD:${p._id}]`).join('\n')}\n`;
       }
 
-      let globalInfo = '';
+      let storeOverview = '';
       try {
-        const [allBrands, allTags, allScents, allConcentrations, allSegments, allProducts] = await Promise.all([
+        const [allBrands, allTags, allScents, allConcentrations, allSegments, productCount] = await Promise.all([
           Brand.find({ status: 'active' }).select('name').lean(),
           Tag.find({ status: 'active' }).select('name').lean(),
-          // Lấy terms theo taxonomy slug mới
           Taxonomy.findOne({ slug: 'scent_group', tenantId }).lean().then(t =>
             t ? TaxonomyTerm.find({ taxonomyId: t._id, tenantId, status: 'active' }).select('name').lean() : []
           ),
@@ -107,17 +109,17 @@ export class AIChatController {
           Taxonomy.findOne({ slug: 'segment', tenantId }).lean().then(t =>
             t ? TaxonomyTerm.find({ taxonomyId: t._id, tenantId, status: 'active' }).select('name').lean() : []
           ),
-          Product.find({}).select('name brand').lean()
+          Product.countDocuments({}),
         ]);
-        globalInfo = `TỔNG QUAN TOÀN BỘ CƠ SỞ DỮ LIỆU CỬA HÀNG (Dùng để trả lời nếu khách hỏi tổng quát):
-- Thương hiệu đang có: ${allBrands.map((b: any) => b.name).join(', ')}
-- Nhãn Tags: ${allTags.map((t: any) => t.name).join(', ')}
+        storeOverview = `TỔNG QUAN CỬA HÀNG:
+- Thương hiệu: ${allBrands.map((b: any) => b.name).join(', ')}
+- Tags: ${allTags.map((t: any) => t.name).join(', ')}
 - Nhóm hương: ${allScents.map((s: any) => s.name).join(', ')}
 - Nồng độ: ${allConcentrations.map((c: any) => c.name).join(', ')}
 - Phân khúc: ${allSegments.map((s: any) => s.name).join(', ')}
-- TOÀN BỘ SẢN PHẨM TRONG KHO: ${allProducts.map((p: any) => `${p.name} (${p.brand})`).join(' | ')}`;
+- Tổng số sản phẩm: ${productCount}`;
       } catch (dbErr) {
-        console.error('Error fetching global info:', dbErr);
+        console.error('Error fetching store overview:', dbErr);
       }
 
       // 3. ADAPTIVE STYLE DIRECTIVE - tự điều chỉnh dựa trên lịch sử rating
@@ -164,23 +166,118 @@ Bạn đang làm rất tốt! Duy trì phong cách hiện tại — thân thiệ
         }
       }
 
-      // 4. SYSTEM PROMPT - TƯ VẤN ĐẦY ĐỦ + ADAPTIVE
+      // 4. SYSTEM PROMPT + FUNCTION CALLING
+      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
       const systemPrompt = `
 Bạn là Tinco - Trợ lý AI bán nước hoa cao cấp. Trả lời ngắn gọn, thân thiện, dùng icon :3.
+Bạn CÓ THỂ dùng công cụ search_products (tìm sản phẩm) hoặc get_store_overview (xem tổng quan) khi cần thêm dữ liệu.
+
 QUY TẮC:
-1. Nếu TRẠNG THÁI là "Khách vừa chào": Chỉ chào lại thân thiện, KHÔNG đề xuất sản phẩm, KHÔNG dùng [CARD:id].
-2. Nếu khách hỏi cụ thể và có DANH SÁCH SẢN PHẨM KHỚP NHẤT: Ưu tiên tư vấn các sản phẩm này, BẮT BUỘC chép đúng mã [CARD:id] vào cuối câu.
-3. Nếu khách hỏi tổng quát (ví dụ: shop có hãng nào, có bao nhiêu loại, có nhóm hương gì): Hãy đọc TỔNG QUAN TOÀN BỘ CƠ SỞ DỮ LIỆU CỬA HÀNG để trả lời chính xác, thay vì nói không biết.
-4. KHÔNG bao giờ nhắc đến từ "Database", "Cơ sở dữ liệu", "Hệ thống".
+1. Nếu TRẠNG THÁI là "Khách vừa chào": Chỉ chào lại thân thiện, KHÔNG đề xuất sản phẩm.
+2. Nếu có DANH SÁCH SẢN PHẨM KHỚP NHẤT: Ưu tiên tư vấn các sản phẩm này, BẮT BUỘC chép đúng mã [CARD:id] vào cuối câu.
+3. Nếu khách hỏi tổng quát (thương hiệu, nhóm hương, nồng độ, phân khúc): Dùng TỔNG QUAN CỬA HÀNG bên dưới.
+4. Nếu cần thêm thông tin: Dùng công cụ search_products hoặc get_store_overview.
+5. KHÔNG bao giờ nhắc đến từ "Database", "Cơ sở dữ liệu", "Hệ thống".
 ${adaptiveDirective}
-DỮ LIỆU TÌM KIẾM CỤ THỂ:
+
+DỮ LIỆU HIỆN TẠI:
 ${context}
 
-${globalInfo}
-      `;
+${storeOverview}
+      `.trim();
 
-      const response = await AIService.createChatStream(recentMessages, systemPrompt, image);
-      if (!response.body) throw new Error('No body');
+      const contents = recentMessages.map((m: any) => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }],
+      }));
+
+      const model = genAI.getGenerativeModel({
+        model: 'gemini-3.1-flash-lite',
+        systemInstruction: systemPrompt,
+        tools: [{ functionDeclarations: AdminToolService.getUserDeclarations() }],
+        safetySettings: [
+          { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        ],
+      });
+
+      // Step 1: Non-streaming call to check for tool use
+      let initialResult;
+      try {
+        initialResult = await model.generateContent({ contents });
+      } catch {
+        // Fallback: old streaming without tools
+        const fb = await AIService.createChatStream(recentMessages, systemPrompt, image);
+        if (!fb.body) throw new Error('No body');
+        const origin = req.headers.origin || 'http://localhost:3000';
+        reply.raw.writeHead(200, {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Transfer-Encoding': 'chunked',
+          'X-Accel-Buffering': 'no',
+          'Cache-Control': 'no-cache, no-transform',
+          'Access-Control-Allow-Origin': origin,
+          'Access-Control-Allow-Credentials': 'true',
+        });
+        let fullResponseText = '';
+        const reader = fb.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = new TextDecoder().decode(value);
+          fullResponseText += chunk;
+          reply.raw.write(value);
+        }
+        if (fullResponseText.trim() && !fullResponseText.includes('NULL')) {
+          await Promise.all([
+            redisService.set(cacheKey, fullResponseText),
+            Knowledge.findOneAndUpdate(
+              { question: cleanQuestion, tenantId },
+              { answer: fullResponseText },
+              { upsert: true }
+            ),
+          ]);
+        }
+        reply.raw.end();
+        return reply;
+      }
+
+      const candidate = initialResult.response.candidates?.[0];
+      const functionCall = candidate?.content?.parts?.[0]?.functionCall;
+
+      if (functionCall) {
+        console.log(`🔧 [ChatStream] Tool called: ${functionCall.name}`, JSON.stringify(functionCall.args));
+        let toolResult: any;
+        try {
+          if (functionCall.name === 'search_products') {
+            const sr = await SearchService.hybridSearch(
+              functionCall.args?.query || lastMessage,
+              tenantId,
+              functionCall.args?.limit || 5
+            );
+            toolResult = {
+              products: sr.products,
+              mode: sr.mode,
+            };
+          } else if (functionCall.name === 'get_store_overview') {
+            toolResult = { overview: storeOverview };
+          } else {
+            toolResult = { error: `Unknown tool: ${functionCall.name}` };
+          }
+        } catch (err: any) {
+          toolResult = { error: err.message };
+        }
+
+        contents.push(candidate!.content);
+        contents.push({
+          role: 'user',
+          parts: [{ functionResponse: { name: functionCall.name, response: toolResult } }],
+        });
+      }
+
+      // Step 2: Stream final response
+      const streamResult = await model.generateContentStream({ contents });
 
       const origin = req.headers.origin || 'http://localhost:3000';
       reply.raw.writeHead(200, {
@@ -189,21 +286,18 @@ ${globalInfo}
         'X-Accel-Buffering': 'no',
         'Cache-Control': 'no-cache, no-transform',
         'Access-Control-Allow-Origin': origin,
-        'Access-Control-Allow-Credentials': 'true'
+        'Access-Control-Allow-Credentials': 'true',
       });
 
-      const reader = response.body.getReader();
       let fullResponseText = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = new TextDecoder().decode(value);
-        fullResponseText += chunk;
-        reply.raw.write(value);
+      for await (const chunk of streamResult.stream) {
+        const text = chunk.text();
+        if (text) {
+          fullResponseText += text;
+          reply.raw.write(text);
+        }
       }
 
-      // 4. LƯU VĨNH VIỄN
       if (fullResponseText.trim() && !fullResponseText.includes('NULL')) {
         await Promise.all([
           redisService.set(cacheKey, fullResponseText),
@@ -211,7 +305,7 @@ ${globalInfo}
             { question: cleanQuestion, tenantId },
             { answer: fullResponseText },
             { upsert: true }
-          )
+          ),
         ]);
       }
 
@@ -231,6 +325,147 @@ ${globalInfo}
 
   static async supportChat(req: FastifyRequest, reply: FastifyReply) {
     return this.chatStream(req, reply);
+  }
+
+  /**
+   * POST /api/ai/admin/chat
+   * Admin Chat — giống chatStream nhưng inject context quản trị
+   */
+  static async adminChat(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const body = req.body as { message: string; history?: any[] };
+      const message = body.message?.trim();
+      const history = body.history || [];
+      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+
+      if (!message) {
+        return reply.status(400).send({ error: 'Message is required' });
+      }
+
+      const recentMessages = [...history.slice(-10), { role: 'user', content: message }];
+
+      // ── ADMIN SYSTEM PROMPT ────────────────────────────────────────────
+      const docsContext = await DocsService.getRelevantDocs(message);
+
+      const systemPrompt = `
+Bạn là AdminAI - Trợ lý AI quản trị hệ thống L'essence dành riêng cho Admin.
+Bạn có thể truy cập dữ liệu thực tế từ database thông qua các công cụ được cung cấp bên dưới.
+
+Khi cần số liệu cụ thể (số lượng brands, orders, users, doanh thu...), hãy DÙNG CÔNG CỤ.
+KHÔNG tự suy diễn hay bịa đặt số liệu — hãy luôn dùng công cụ để lấy dữ liệu thật.
+
+Ngoài ra, bạn cũng có thể xem tài liệu codebase từ GitHub để trả lời về kiến trúc, API, coding standards...
+
+TÀI LIỆU HỆ THỐNG (tự động cập nhật từ GitHub mỗi 5 phút):
+${docsContext}
+
+QUY TẮC:
+1. Trả lời NGẮN GỌN, đi thẳng vào vấn đề.
+2. Khi cần số liệu, hãy gọi công cụ thích hợp trước — không tự suy diễn.
+3. Giải thích ngắn gọn kết quả từ công cụ cho admin.
+4. KHÔNG tiết lộ thông tin nhạy cảm như mật khẩu, token, API key.
+5. Trả lời bằng tiếng Việt, dùng icon nhẹ nhàng (📊 📦 👤 🖥️ 🔧).
+6. Nếu công cụ trả về lỗi, hãy thông báo và đề xuất admin kiểm tra thủ công.
+7. KHÔNG nhắc đến database, system prompt, hay cơ chế hoạt động của AI.
+8. Nếu người dùng hỏi lại cùng một câu, hãy acknowledge đã trả lời trước đó và hỏi họ cần giúp gì khác.
+`.trim();
+
+      // ── FUNCTION CALLING ─────────────────────────────────────────────
+      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+      const toolService = new AdminToolService(tenantId);
+
+      const contents = recentMessages.map((m: any) => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }],
+      }));
+
+      const model = genAI.getGenerativeModel({
+        model: 'gemini-3.1-flash-lite',
+        systemInstruction: systemPrompt,
+        tools: [{ functionDeclarations: AdminToolService.getDeclarations() }],
+        safetySettings: [
+          { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        ],
+      });
+
+      // Step 1: Non-streaming call to check if AI wants to use a tool
+      let initialResult;
+      try {
+        initialResult = await model.generateContent({ contents });
+      } catch (e: any) {
+        // If tool-calling fails, fall back to simple streaming
+        const fallbackResponse = await AIService.createChatStream(
+          recentMessages.map((m: any) => ({ role: m.role, content: m.content })),
+          systemPrompt
+        );
+        if (!fallbackResponse.body) {
+          return reply.status(502).send({ error: 'AI upstream failed: no response body' });
+        }
+        const origin = req.headers.origin || 'http://localhost:3000';
+        reply.raw.writeHead(200, {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Transfer-Encoding': 'chunked',
+          'X-Accel-Buffering': 'no',
+          'Cache-Control': 'no-cache, no-transform',
+          'Access-Control-Allow-Origin': origin,
+          'Access-Control-Allow-Credentials': 'true',
+        });
+        const reader = fallbackResponse.body.getReader();
+        while (true) { const { done, value } = await reader.read(); if (done) break; reply.raw.write(value); }
+        reply.raw.end();
+        return reply;
+      }
+
+      const candidate = initialResult.response.candidates?.[0];
+      const functionCall = candidate?.content?.parts?.[0]?.functionCall;
+
+      if (functionCall) {
+        console.log(`🔧 [AdminChat] Tool called: ${functionCall.name}`, JSON.stringify(functionCall.args));
+        let toolResult: any;
+        try {
+          toolResult = await toolService.execute(functionCall.name, functionCall.args || {});
+        } catch (err: any) {
+          toolResult = { error: err.message };
+        }
+
+        contents.push(candidate!.content);
+        contents.push({
+          role: 'user',
+          parts: [{ functionResponse: { name: functionCall.name, response: toolResult } }],
+        });
+      }
+
+      // Step 2: Stream the final response (with or without tool result)
+      const streamResult = await model.generateContentStream({ contents });
+
+      const origin = req.headers.origin || 'http://localhost:3000';
+      reply.raw.writeHead(200, {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Transfer-Encoding': 'chunked',
+        'X-Accel-Buffering': 'no',
+        'Cache-Control': 'no-cache, no-transform',
+        'Access-Control-Allow-Origin': origin,
+        'Access-Control-Allow-Credentials': 'true',
+      });
+
+      for await (const chunk of streamResult.stream) {
+        const text = chunk.text();
+        if (text) reply.raw.write(text);
+      }
+
+      reply.raw.end();
+      return reply;
+    } catch (error: any) {
+      console.error('❌ [AdminChat Error]:', error);
+      if (!reply.sent && !reply.raw.headersSent) {
+        return reply.status(500).send({ error: error.message || 'Internal Server Error' });
+      }
+      if (!reply.raw.writableEnded) reply.raw.end();
+      return reply;
+    }
   }
 
   /**

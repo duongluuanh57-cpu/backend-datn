@@ -70,7 +70,7 @@ export class TaxonomyService {
   }, tenantId: string) {
     const taxonomyId = await getTaxonomyId(data.type, tenantId);
     if (!taxonomyId) {
-      throw new Error(`Taxonomy type "${data.type}" chưa được khởi tạo trong hệ thống mới`);
+      throw new Error(`Vui lòng kiểm tra lại danh mục "${data.type}".`);
     }
     const { type, ...rest } = data;
     return TaxonomyTerm.create({ ...rest, taxonomyId, tenantId });

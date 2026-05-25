@@ -21,7 +21,7 @@ interface CheckResult {
 /**
  * Kiểm tra kết nối MongoDB thực sự (ping command)
  */
-async function checkDatabase(): Promise<CheckResult> {
+export async function checkDatabase(): Promise<CheckResult> {
   const start = Date.now();
   try {
     if (mongoose.connection.readyState !== 1) {

@@ -114,7 +114,7 @@ export class TagService {
   static async deleteTag(id: string, tenantId: string): Promise<boolean> {
     const tag = await Tag.findOne({ _id: id, tenantId });
     if (tag && (tag.slug === 'Sale' || tag.slug === 'New')) {
-      throw new Error('Cannot delete system tag (Sale / New)');
+      throw new Error('Vui lòng kiểm tra lại thẻ (Sale / New).');
     }
     const result = await Tag.deleteOne({ _id: id, tenantId });
     return result.deletedCount > 0;

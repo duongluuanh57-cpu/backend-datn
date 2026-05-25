@@ -45,6 +45,8 @@ export interface IHomepageConfig extends Document {
   galleryVi: IGalleryImage[];
   galleryEn: IGalleryImage[];
   productCardConfig: IProductCardConfig;
+  blogCardConfig: Record<string, any>;
+  productSessionLayout: Record<string, any>;
   updatedAt: Date;
 }
 
@@ -133,10 +135,13 @@ const HomepageConfigSchema = new Schema<IHomepageConfig>(
     bannerLabelEn: { type: String, default: 'PREMIUM FRAGRANCE HOUSE' },
     galleryVi: { type: [GalleryImageSchema], default: [] },
     galleryEn: { type: [GalleryImageSchema], default: [] },
-    productCardConfig: { type: ProductCardConfigSchema, default: () => ({}) }
+    productCardConfig: { type: ProductCardConfigSchema, default: () => ({}) },
+    blogCardConfig: { type: Schema.Types.Mixed, default: {} },
+    productSessionLayout: { type: Schema.Types.Mixed, default: {} }
   },
   {
     timestamps: true,
+    minimize: false,
     collection: 'homepage_configs'
   }
 );

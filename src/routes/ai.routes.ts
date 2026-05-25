@@ -4,6 +4,7 @@ import { AIChatController } from '../controllers/AIChatController.ts';
 import { AICatalogController } from '../controllers/AICatalogController.ts';
 import { AIVisionController } from '../controllers/AIVisionController.ts';
 import { AICoreController } from '../controllers/AICoreController.ts';
+import { authMiddleware, requireRole } from '../middleware/authMiddleware.ts';
 import { AIPromptSchema, AIGenerateNameSchema } from '../types/feature.types.ts';
 
 export async function aiRoutes(app: FastifyInstance) {
@@ -55,9 +56,15 @@ export async function aiRoutes(app: FastifyInstance) {
     handler: AIChatController.supportChat,
   });
 
-  // POST /api/ai/chat - Streaming Vercel AI SDK
+  // POST /api/ai/chat - Streaming Vercel AI SDK (dành cho user)
   server.post('/chat', {
     handler: AIChatController.chatStream,
+  });
+
+  // POST /api/ai/admin/chat - Admin chat (yêu cầu auth + role ADMIN/SUBADMIN)
+  server.post('/admin/chat', {
+    preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
+    handler: AIChatController.adminChat,
   });
 
   // POST /api/ai/autocomplete - Gợi ý tự động hoàn thành thời gian thực

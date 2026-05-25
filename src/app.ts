@@ -24,16 +24,18 @@ import { orderRoutes } from './routes/order.routes.ts';
 import { taxonomyRoutes } from './routes/taxonomy.routes.ts';
 import { taxonomyV2Routes } from './routes/taxonomy-v2.routes.ts';
 import { voucherRoutes } from './routes/voucher.routes.ts';
+import { paymentRoutes } from './routes/payment.routes.ts';
 // Đảm bảo các model mới được đăng ký với Mongoose khi app khởi động
 import './models/Taxonomy.ts';
 import './models/TaxonomyTerm.ts';
 import './models/ProductTaxonomyTerm.ts';
+import './models/Payment.ts';
 import { userAddressRoutes } from './routes/user-address.routes.ts';
 import { homepageConfigRoutes } from './routes/homepage.routes.ts';
 import rawBody from 'fastify-raw-body';
 import corePlugin from './plugins/core.ts';
 import { errorHandler } from './middleware/errorHandler.ts';
-import { runHealthChecks } from './services/HealthCheckService.ts';
+import { runHealthChecks, checkDatabase } from './services/HealthCheckService.ts';
 import { register } from './config/metrics.ts';
 
 export function buildApp(): FastifyInstance {
@@ -119,6 +121,7 @@ export function buildApp(): FastifyInstance {
   app.register(userAddressRoutes, { prefix: '/api/user-addresses' });
   app.register(homepageConfigRoutes, { prefix: '/api/homepage-config' });
   app.register(voucherRoutes, { prefix: '/api/vouchers' });
+  app.register(paymentRoutes, { prefix: '/api/payments' });
 
   // Global Error Handler
   app.setErrorHandler(errorHandler);
@@ -140,11 +143,10 @@ export function buildApp(): FastifyInstance {
     return reply.status(httpStatus).send(body);
   });
 
-  // Ping route - Trả về 200 chỉ khi MongoDB đã kết nối sẵn sàng
+  // Ping route - Trả về 200 chỉ khi MongoDB thực sự sẵn sàng xử lý query
   app.get('/ping', async (request, reply) => {
-    const mongoose = await import('mongoose');
-    const isDbReady = mongoose.default.connection.readyState === 1;
-    if (!isDbReady) {
+    const dbCheck = await checkDatabase();
+    if (dbCheck.status !== 'up') {
       return reply.status(503).send({ status: 'warming_up', timestamp: new Date().toISOString() });
     }
     return reply.status(200).send({ status: 'ok', timestamp: new Date().toISOString() });

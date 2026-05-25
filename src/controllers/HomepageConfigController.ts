@@ -1,39 +1,32 @@
+import mongoose from 'mongoose';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { HomepageConfig } from '../models/HomepageConfig.ts';
 
 export class HomepageConfigController {
-  /**
-   * GET /api/homepage-config
-   * Lấy cấu hình trang chủ hiện tại. Nếu chưa có thì tự động tạo mới với giá trị mặc định.
-   */
   static async getConfig(req: FastifyRequest, reply: FastifyReply) {
     try {
       const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const db = mongoose.connection.db;
+      if (!db) throw new Error('Database not connected');
+      const col = db.collection('homepage_configs');
 
-      let config = await HomepageConfig.findOne({ tenantId });
+      let doc = await col.findOne({ tenantId });
 
-      // Nếu chưa có config nào cho tenant này → tạo mới với defaults
-      if (!config) {
-        config = new HomepageConfig({ tenantId });
-        await config.save();
-      } else {
-        // Tự động thêm trendingProducts vào sections nếu chưa tồn tại
-        const hasTrending = config.sections.some((s: any) => s.id === 'trendingProducts');
-        if (!hasTrending) {
-          const maxOrder = Math.max(...config.sections.map((s: any) => s.order), 0);
-          config.sections.push({
-            id: 'trendingProducts',
-            enabled: true,
-            order: maxOrder + 1
-          });
-          await config.save();
-        }
+      if (!doc) {
+        await HomepageConfig.create({ tenantId });
+        doc = await col.findOne({ tenantId });
       }
 
-      return reply.status(200).send({
-        success: true,
-        data: config
-      });
+      if (!doc || typeof doc.productSessionLayout !== 'object') {
+        await col.updateOne(
+          { tenantId },
+          { $set: { productSessionLayout: {} } },
+          { upsert: true }
+        );
+        doc = await col.findOne({ tenantId });
+      }
+
+      return reply.status(200).send({ success: true, data: doc });
     } catch (error: any) {
       return reply.status(500).send({
         success: false,
@@ -42,40 +35,48 @@ export class HomepageConfigController {
     }
   }
 
-  /**
-   * PUT /api/homepage-config
-   * Lưu toàn bộ cấu hình trang chủ (sections order, banner, gallery).
-   */
   static async updateConfig(req: FastifyRequest, reply: FastifyReply) {
     try {
       const tenantId = (req as any).user?.tenantId || 'default-tenant';
       const body = req.body as any;
+      const db = mongoose.connection.db;
+      if (!db) throw new Error('Database not connected');
+      const col = db.collection('homepage_configs');
 
-      // Upsert: Nếu chưa có config thì tạo mới, nếu có thì cập nhật
-      const config = await HomepageConfig.findOneAndUpdate(
+      // Native driver — write tất cả fields
+      const fields = [
+        'sections', 'bannerImages',
+        'bannerTitleVi', 'bannerSubtitleVi', 'bannerLabelVi',
+        'bannerTitleEn', 'bannerSubtitleEn', 'bannerLabelEn',
+        'galleryVi', 'galleryEn', 'productCardConfig', 'blogCardConfig',
+        'productSessionLayout'
+      ];
+      const $set: Record<string, any> = {};
+      for (const key of fields) {
+        if (body[key] !== undefined) {
+          $set[key] = JSON.parse(JSON.stringify(body[key]));
+        }
+      }
+
+      const writeResult = await col.updateOne(
         { tenantId },
-        {
-          $set: {
-            ...(body.sections !== undefined && { sections: body.sections }),
-            ...(body.bannerImages !== undefined && { bannerImages: body.bannerImages }),
-            ...(body.bannerTitleVi !== undefined && { bannerTitleVi: body.bannerTitleVi }),
-            ...(body.bannerSubtitleVi !== undefined && { bannerSubtitleVi: body.bannerSubtitleVi }),
-            ...(body.bannerLabelVi !== undefined && { bannerLabelVi: body.bannerLabelVi }),
-            ...(body.bannerTitleEn !== undefined && { bannerTitleEn: body.bannerTitleEn }),
-            ...(body.bannerSubtitleEn !== undefined && { bannerSubtitleEn: body.bannerSubtitleEn }),
-            ...(body.bannerLabelEn !== undefined && { bannerLabelEn: body.bannerLabelEn }),
-            ...(body.galleryVi !== undefined && { galleryVi: body.galleryVi }),
-            ...(body.galleryEn !== undefined && { galleryEn: body.galleryEn }),
-            ...(body.productCardConfig !== undefined && { productCardConfig: body.productCardConfig })
-          }
-        },
-        { new: true, upsert: true, runValidators: true }
+        { $set },
+        { upsert: true, writeConcern: { w: 'majority' } }
       );
+
+      const doc = await col.findOne({ tenantId });
+
+      (doc as any)._debug = {
+        receivedCD: body.productSessionLayout?.columnsDesktop,
+        savedCD: doc?.productSessionLayout?.columnsDesktop,
+        matched: writeResult.matchedCount,
+        modified: writeResult.modifiedCount,
+        writeKeys: Object.keys($set)
+      };
 
       return reply.status(200).send({
         success: true,
-        data: config,
-        message: 'Đã cập nhật cấu hình trang chủ thành công!'
+        data: doc
       });
     } catch (error: any) {
       return reply.status(500).send({
