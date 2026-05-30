@@ -7,7 +7,7 @@
 - **TypeScript** — Strict mode, ES2022 target, NodeNext module resolution
 
 ### Web Framework
-- **Fastify** `^5.x` — High-performance Node.js framework
+- **Fastify** `^5.8.5` — High-performance Node.js framework
   - Plugin architecture, TypeScript-first
   - Zod integration via `fastify-type-provider-zod`
   - Performance: ~75,000 req/sec
@@ -16,44 +16,45 @@
 - **MongoDB Atlas** — Cloud-hosted NoSQL database
   - Vector search (AI embeddings), aggregation pipeline
   - Multi-tenancy via logical isolation (tenantId field)
-- **Mongoose** `^9.x` — MongoDB ODM
+- **Mongoose** `^9.6.2` — MongoDB ODM
   - Schema validation, middleware hooks, virtuals
   - Custom multi-tenancy plugin (auto-filter)
 
 ### Cache
-- **Redis** (via `ioredis` `^5.x`) — In-memory data store
+- **Redis** (via `ioredis` `^5.10.1`) — In-memory data store
   - Singleton pattern với lazyConnect
   - Use cases: JWT blacklist, rate limiting, AI cache, visit counters
 
 ### Queue & Background Jobs
-- **Upstash QStash** `^2.x` — Serverless message queue (HTTP-based)
+- **Upstash QStash** `^2.11.0` — Serverless message queue (HTTP-based)
   - Use cases: Welcome emails, daily cleanup, self-healing
   - Features: Delay, retry, dead letter queue, cron schedules
   - Security: Signature verification + idempotency (Redis)
 
 ### AI & Machine Learning
-- **Google Gemini 3.1 Flash-Lite** — Multimodal AI model
-  - SDK: `@google/generative-ai`
+- **Google Gemini 3.1 Flash-Lite** — Multimodal AI model (primary)
+  - SDK: `@google/genai` `^2.2.0` + `@google/generative-ai` `^0.24.1`
   - Features: Vision (image analysis), text generation, embeddings
   - Pattern: Cascade fallback (3 models × 3 retries = 9 attempts max)
 - **Gemini Embedding 2** — Text embedding (3072 dimensions)
   - Use cases: Semantic search, RAG, similarity matching
-- **LangChain** + **@langchain/langgraph** — Multi-agent workflows
+- **LangChain** + **@langchain/langgraph** `^1.3.0` — Multi-agent workflows
   - StateGraph: Researcher → Writer → Reviewer
-- **Vercel AI SDK** `^6.x` — AI streaming utilities
+- **Vercel AI SDK** `^6.0.184` — AI streaming utilities
+  - SDK: `@ai-sdk/google` `^3.0.75`
 
 ### Validation
-- **Zod** `^4.x` — TypeScript-first schema validation
+- **Zod** `^4.4.3` — TypeScript-first schema validation
   - Request validation (body, query, params)
   - Environment variable validation
   - Type inference (no duplicate type definitions)
 
 ### Authentication & Security
-- **JWT** (`jsonwebtoken` `^9.x`) — Access + Refresh tokens
+- **JWT** (`jsonwebtoken` `^9.0.3`) — Access + Refresh tokens
   - HS256 algorithm, issuer + audience validation
   - Token type claim (chống dùng refresh token làm access token)
-- **bcryptjs** `^3.x` — Password hashing (10 rounds)
-- **Speakeasy** `^2.x` — TOTP for 2FA
+- **bcryptjs** `^3.0.3` — Password hashing (10 rounds)
+- **Speakeasy** `^2.0.0` — TOTP for 2FA
 - **Helmet** (`@fastify/helmet`) — Security headers (XSS, HSTS, CSP)
 - **CORS** (`@fastify/cors`) — Cross-Origin Resource Sharing
 - **@fastify/rate-limit** — Dynamic rate limiting (Redis-backed)
@@ -122,12 +123,19 @@
 
 ```json
 {
-  "dev": "cross-env NODE_OPTIONS='--max-old-space-size=2048' node --watch --watch-path=src --strip-types src/server.ts",
+  "dev": "cross-env NODE_OPTIONS='--max-old-space-size=4096' node --watch --watch-path=src --strip-types src/server.ts",
   "build": "esbuild src/server.ts --bundle --platform=node --target=node22 --outfile=dist/server.js --format=esm --minify --external:sharp --external:dotenv --packages=external",
   "start": "node dist/server.js",
   "test": "vitest run",
   "test:watch": "vitest",
-  "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+  "clean": "node -e \"const fs = require('fs'); if (fs.existsSync('dist')) fs.rmSync('dist', { recursive: true, force: true }); console.log('🧹 Cleaned dist folder')\"",
+  "migrate:images": "node --strip-types src/scripts/migrate-product-images.ts",
+  "migrate:orders": "node --strip-types src/scripts/migrate-order-items.ts",
+  "migrate:taxonomies": "node --strip-types src/scripts/migrate-product-taxonomies.ts",
+  "migrate:taxonomy-v2": "node --strip-types src/scripts/migrate-taxonomy.ts",
+  "migrate:embeddings": "node --strip-types src/scripts/migrate-product-embeddings.ts",
+  "check:orders": "node --strip-types src/scripts/check-orders.ts",
+  "seed:orders": "node --strip-types src/scripts/seed-orders.ts"
 }
 ```
 
@@ -157,10 +165,13 @@
 | Framework | `fastify` | Core web framework |
 | Database | `mongoose` | MongoDB ODM |
 | Cache | `ioredis` | Redis client |
-| AI | `@google/generative-ai` | Gemini AI SDK |
+| AI | `@google/generative-ai` | Gemini AI SDK (legacy) |
+| AI | `@google/genai` | Gemini AI SDK (new) |
+| AI | `@ai-sdk/google` | Vercel AI SDK × Google provider |
 | AI | `@langchain/langgraph` | Multi-agent workflow |
 | AI | `@langchain/google-genai` | LangChain × Gemini |
 | AI | `ai` (Vercel) | Streaming utilities |
+| AI | `@langchain/core` | LangChain core |
 | Security | `jsonwebtoken` | JWT tokens |
 | Security | `bcryptjs` | Password hashing |
 | Security | `speakeasy` | TOTP 2FA |

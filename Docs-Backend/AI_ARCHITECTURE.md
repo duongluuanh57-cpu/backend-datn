@@ -2,7 +2,7 @@
 
 ## Tổng quan
 
-Hệ thống AI được xây dựng với **Google Gemini** làm core model (cascade 3 model khác nhau), kết hợp **LangGraph** cho multi-agent workflows, **Gemini Embedding 2** cho semantic search, và **LLM-as-a-Judge** cho quality evaluation. Chat với users dùng **BatchBuffer** để gom nhiều request vào 1 lần gọi Gemini.
+Hệ thống AI được xây dựng với **Google Gemini** làm core model (cascade 3 model khác nhau), kết hợp **LangGraph** cho multi-agent workflows, **Gemini Embedding 2** cho semantic search. Chat với users dùng **BatchBuffer** để gom nhiều request vào 1 lần gọi Gemini.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -19,7 +19,7 @@ Hệ thống AI được xây dựng với **Google Gemini** làm core model (ca
 │  ┌──────────────────────────────────────────┐               │
 │  │           AI Service Layer                │               │
 │  │  ┌──────────┐ ┌──────────┐ ┌──────────┐  │               │
-│  │  │ AIService │ │AgentSrvc│ │SearchSrvc│  │               │
+│  │  │ AIService │ │AgentSvc │ │SearchSvc │  │               │
 │  │  │cascade +  │ │LangGraph│ │ hybrid + │  │               │
 │  │  │  retry    │ │3 Agents │ │ greeting │  │               │
 │  │  └──────────┘ └──────────┘ └──────────┘  │               │
@@ -28,7 +28,7 @@ Hệ thống AI được xây dựng với **Google Gemini** làm core model (ca
 │  ┌──────────────────────────────────────────┐               │
 │  │       Infrastructure Services             │               │
 │  │  ┌──────────┐ ┌──────────────┐          │               │
-│  │  │BatchBufr │ │Concurrency   │          │               │
+│  │  │BatchBuf  │ │Concurrency   │          │               │
 │  │  │150ms/15  │ │Limiter 10/200│          │               │
 │  │  │batch +   │ │Gemini slot   │          │               │
 │  │  │cache     │ │guard         │          │               │
@@ -37,11 +37,11 @@ Hệ thống AI được xây dựng với **Google Gemini** làm core model (ca
 │                                                              │
 │  ┌──────────────────────────────────────────┐               │
 │  │          Support Services                 │               │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐  │               │
-│  │  │EvalService│ │RedisSrvc│ │AdminTool │  │               │
-│  │  │LLM-as-a- │ │ AI Cache│ │Fn Calling│  │               │
-│  │  │  Judge   │ │permanent│ │for Admin │  │               │
-│  │  └──────────┘ └──────────┘ └──────────┘  │               │
+│  │  ┌──────────┐ ┌────────────┐             │               │
+│  │  │RedisSvc  │ │ AdminTool  │             │               │
+│  │  │ AI Cache │ │Fn Calling  │             │               │
+│  │  │permanent │ │for Admin   │             │               │
+│  │  └──────────┘ └────────────┘             │               │
 │  └──────────────────────────────────────────┘               │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -73,32 +73,32 @@ Khác với tài liệu cũ (3 model giống nhau), cascade hiện tại dùng *
 
 ```
 User Request
-    │
+    |
     ▼
-┌─────────────────────────────────────────────┐
-│  Attempt 1: gemini-3.1-flash-lite (Primary) │──→ Success → Return
-│                    Lỗi?                      │
-└─────────────────────┬───────────────────────┘
-                      │ Lỗi (503/429/timeout)
-                      ▼
-┌─────────────────────────────────────────────┐
-│  Attempt 2: gemini-2.0-flash-lite           │──→ Success → Return
-│                    Lỗi?                      │
-└─────────────────────┬───────────────────────┘
-                      │ Lỗi
-                      ▼
-┌─────────────────────────────────────────────┐
-│  Attempt 3: gemini-1.5-flash-lite           │──→ Success → Return
-│                    Lỗi?                      │
-└─────────────────────┬───────────────────────┘
-                      │ Hết 3 models
-                      ▼
-              ┌─────────────────┐
-              │  Retry cycle 2   │──→ Lặp lại từ Model 1
-              │  (3 models × 3   │
-              │   cycles = 9     │
-              │   attempts max)  │
-              └─────────────────┘
++---------------------------------------------+
+|  Attempt 1: gemini-3.1-flash-lite (Primary) |--> Success → Return
+|                    Lỗi?                      |
++------------------------+--------------------+
+                         | Lỗi (503/429/timeout)
+                         ▼
++---------------------------------------------+
+|  Attempt 2: gemini-2.0-flash-lite           |--> Success → Return
+|                    Lỗi?                      |
++------------------------+--------------------+
+                         | Lỗi
+                         ▼
++---------------------------------------------+
+|  Attempt 3: gemini-1.5-flash-lite           |--> Success → Return
+|                    Lỗi?                      |
++------------------------+--------------------+
+                         | Hết 3 models
+                         ▼
+                +-----------------+
+                |  Retry cycle 2   |--> Lặp lại từ Model 1
+                |  (3 models × 3   |
+                |   cycles = 9     |
+                |   attempts max)  |
+                +-----------------+
 ```
 
 **Key features:**
@@ -127,27 +127,27 @@ User Request
 ### Flow
 
 ```
-User A ──┐
-User B ──┤
-User C ──┤  ┌────────────────────────────────────────────┐
-User D ──┤  │           BatchBuffer (150ms window)        │
-User E ──┼──┤  queue.push()                                │
-User F ──┤  │  • 150ms timeout flush                       │
-User G ──┤  │  • 15 users → force flush                    │
-User H ──┤  │  • 2s max wait                               │
-         │  │  • Cache check trước: Redis + Knowledge DB   │
-         │  └─────────────────────┬─────────────────────────┘
-                                 │ flush()
-                                 ▼
-         ┌────────────────────────────────────────────────┐
-         │  AIService.createBatchChatStream(items[])       │
-         │  • Build 1 batch prompt với N câu hỏi          │
-         │  • Gọi Gemini 1 lần                            │
-         │  • Parse JSON response { shortId: answer }     │
-         │  • Cache vào Redis + Knowledge DB              │
-         └─────────────────────┬──────────────────────────┘
-                              │
-         ┌────────────────────┼────────────────────┐
+User A --+
+User B --+
+User C --+  +--------------------------------------------+
+User D --+  |        BatchBuffer (150ms window)          |
+User E --+--+  queue.push()                              |
+User F --+  |  • 150ms timeout flush                     |
+User G --+  |  • 15 users → force flush                  |
+User H --+  |  • 2s max wait                             |
+         |  |  • Cache check trước: Redis + Knowledge DB |
+         |  +---------------------+----------------------+
+                                  | flush()
+                                  ▼
+         +------------------------------------------------+
+         |  AIService.createBatchChatStream(items[])       |
+         |  • Build 1 batch prompt với N câu hỏi          |
+         |  • Gọi Gemini 1 lần                            |
+         |  • Parse JSON response { shortId: answer }     |
+         |  • Cache vào Redis + Knowledge DB              |
+         +---------------------+--------------------------+
+                               |
+         +--------------------+--------------------+
          ▼                    ▼                    ▼
       User A ✓            User B ✓             User C ✓
       (resolve)            (resolve)            (resolve)
@@ -202,31 +202,31 @@ try {
 
 ## 4. LangGraph Multi-Agent (`AgentService.ts`)
 
-Triển khai **StateGraph** với 3 agents nối tiếp (giữ nguyên):
+Triển khai **StateGraph** với 3 agents nối tiếp:
 
 ```
 START
-  │
+  |
   ▼
-┌─────────────────────────────────────────────┐
-│  Agent 1: RESEARCHER                         │
-│  → Tóm tắt chủ đề bằng ngôn ngữ bình dân     │
-└───────────────────┬─────────────────────────┘
-                    │ research output
-                    ▼
-┌─────────────────────────────────────────────┐
-│  Agent 2: WRITER                             │
-│  → Viết bài dựa trên research, tối giản      │
-└───────────────────┬─────────────────────────┘
-                    │ final_output (draft)
-                    ▼
-┌─────────────────────────────────────────────┐
-│  Agent 3: REVIEWER                           │
-│  → Kiểm duyệt, loại bỏ từ phức tạp          │
-└───────────────────┬─────────────────────────┘
-                    │ reviewed output
-                    ▼
-                   END
++---------------------------------------------+
+|  Agent 1: RESEARCHER                         |
+|  → Tóm tắt chủ đề bằng ngôn ngữ bình dân    |
++--------------------+------------------------+
+                     | research output
+                     ▼
++---------------------------------------------+
+|  Agent 2: WRITER                             |
+|  → Viết bài dựa trên research, tối giản     |
++--------------------+------------------------+
+                     | final_output (draft)
+                     ▼
++---------------------------------------------+
+|  Agent 3: REVIEWER                           |
+|  → Kiểm duyệt, loại bỏ từ phức tạp         |
++--------------------+------------------------+
+                     | reviewed output
+                     ▼
+                    END
 ```
 
 **Caching**: Toàn bộ workflow được cache trong Redis 24h (SHA256 hash của task).
@@ -239,34 +239,34 @@ Kết hợp **keyword matching** qua MongoDB **aggregation pipeline** (thay vì 
 
 ```
 User Query: "nước hoa nam hương gỗ"
-    │
+    |
     ▼
-┌─────────────────────────────────────────────┐
-│  1. Greeting Detection                       │
-│  ├─ 16 patterns: chào, hello, cảm ơn, bye...│
-│  └─ → mode: 'greeting' (skip search)        │
-└───────────────────┬─────────────────────────┘
-                    │ Not greeting
-                    ▼
-┌─────────────────────────────────────────────┐
-│  2. MongoDB Aggregate Pipeline               │
-│  ├─ $lookup brands → brandData              │
-│  ├─ $match: $regex trên name + brandData    │
-│  ├─ $limit: limit+4 (pre-filter)            │
-│  ├─ $sort: soldCount DESC, rating DESC      │
-│  └─ $limit: limit (final)                   │
-└───────────────────┬─────────────────────────┘
-                    │ products[]
-                    ▼
-┌─────────────────────────────────────────────┐
-│  3. Post-filter (belt-and-suspenders)        │
-│  ├─ Lọc lại name/brand check trong memory   │
-│  ├─ 'specific': có kết quả chính xác        │
-│  └─ 'general': không có kết quả             │
-└───────────────────┬─────────────────────────┘
-                    │ { products, mode }
-                    ▼
-             Return to Controller
++---------------------------------------------+
+|  1. Greeting Detection                       |
+|  ├─ 16 patterns: chào, hello, cảm ơn, bye...|
+|  └─ → mode: 'greeting' (skip search)        |
++--------------------+------------------------+
+                     | Not greeting
+                     ▼
++---------------------------------------------+
+|  2. MongoDB Aggregate Pipeline               |
+|  ├─ $lookup brands → brandData              |
+|  ├─ $match: $regex trên name + brandData    |
+|  ├─ $limit: limit+4 (pre-filter)            |
+|  ├─ $sort: soldCount DESC, rating DESC      |
+|  └─ $limit: limit (final)                   |
++--------------------+------------------------+
+                     | products[]
+                     ▼
++---------------------------------------------+
+|  3. Post-filter (belt-and-suspenders)        |
+|  ├─ Lọc lại name/brand check trong memory   |
+|  ├─ 'specific': có kết quả chính xác        |
+|  └─ 'general': không có kết quả             |
++--------------------+------------------------+
+                     | { products, mode }
+                     ▼
+              Return to Controller
 ```
 
 **Thay đổi quan trọng**: Không còn dùng `Product.find({}).toArray()` + filter trong memory. Dùng `mongoose.connection.db.collection('products').aggregate([...])` — MongoDB làm việc filter, sort, limit, join brands. An toàn cho database lớn.
@@ -279,23 +279,23 @@ Chat với users đã chuyển từ **streaming real-time** sang **batch + JSON 
 
 ```
 User sends /api/ai/chat → { messages, image? }
-    │
+    |
     ▼
 AIChatController.chatStream()
-    │
+    |
     ├─ 1. Image check → image? → fallback direct stream (skip batch)
-    │
+    |
     ├─ 2. Adaptive Learning (từ rating lịch sử)
-    │      └─ avgRating / consecutiveLow → adaptiveDirective
-    │
+    |      └─ avgRating / consecutiveLow → adaptiveDirective
+    |
     ├─ 3. Hybrid Search (SearchService)
-    │      ├─ products[], mode, context
-    │      └─ storeOverview (brands, tags, scent groups...)
-    │
+    |      ├─ products[], mode, context
+    |      └─ storeOverview (brands, tags, scent groups...)
+    |
     ├─ 4. Push vào BatchBuffer
-    │      ├─ question, cacheKey, context
-    │      └─ → Promise (resolve/reject)
-    │
+    |      ├─ question, cacheKey, context
+    |      └─ → Promise (resolve/reject)
+    |
     └─ 5. BatchBuffer flush → Gemini (1 call N questions)
            ├─ Cache hit? → resolve ngay
            ├─ Gemini success → parse JSON, resolve từng entry
@@ -327,23 +327,23 @@ Admin chat **giữ nguyên streaming** + function calling, không qua batch:
 
 ```
 Admin sends /api/ai/admin/chat → { message, history }
-    │
+    |
     ▼
 AIChatController.adminChat()
-    │
+    |
     ├─ 1. DocsService — Fetch GitHub docs (cached 5 phút)
-    │      → system prompt với context codebase
-    │
+    |      → system prompt với context codebase
+    |
     ├─ 2. Gemini call (non-streaming) — function detection
-    │      ├─ Tool declarations từ AdminToolService.getDeclarations()
-    │      └─ AI decides if it needs DB data
-    │
+    |      ├─ Tool declarations từ AdminToolService.getDeclarations()
+    |      └─ AI decides if it needs DB data
+    |
     ├─ 3. Nếu có function call → AdminToolService.execute()
-    │      ├─ get_dashboard_stats, list_orders
-    │      ├─ list_products, list_brands, list_users
-    │      ├─ list_vouchers, list_tags, list_taxonomies
-    │      └─ search_products, get_store_overview (user-facing)
-    │
+    |      ├─ get_dashboard_stats, list_orders
+    |      ├─ list_products, list_brands, list_users
+    |      ├─ list_vouchers, list_tags, list_taxonomies
+    |      └─ search_products, get_store_overview (user-facing)
+    |
     └─ 4. Gemini call (streaming) — final response
            → Stream text về client
 ```
@@ -359,60 +359,42 @@ AIChatController.adminChat()
 
 ```
 User sends /api/ai/feedback → { rating: 1-5 }
-    │
+    |
     ▼
 AIChatController.handleFeedback()
-    │
+    |
     ├─ Rating 5: "Vui mừng, cảm ơn, hỏi giúp thêm"
     ├─ Rating 4: "Cảm ơn, thừa nhận cần cải thiện"
     ├─ Rating 3: "Hỏi điều chỉnh thêm"
     ├─ Rating 2: "Xin lỗi, đề nghị mô tả lại"
     └─ Rating 1: "Xin lỗi sâu sắc, đề nghị liên hệ hỗ trợ"
-    │
+    |
     └─ → Stream phản hồi về client (không batch, real-time)
 ```
 
 ---
 
-## 9. LLM-as-a-Judge (`EvalService.ts`)
-
-Đánh giá chất lượng phản hồi AI dựa trên **Faithfulness** (giữ nguyên):
-
-```
-Prompt template:
-  BẠN LÀ CHUYÊN GIA KIỂM ĐỊNH CHẤT LƯỢNG AI.
-  KIẾN THỨC: {context}
-  CÂU HỎI: {query}
-  CÂU TRẢ LỜI: {answer}
-  
-  HÃY TRẢ VỀ JSON:
-  { "score": 1-5, "reason": "..." }
-```
-
-- **Score 5**: Hoàn hảo — trả lời chính xác dựa trên context
-- **Score 1**: Hallucination — trả lời không dựa trên context
-
----
-
-## 10. Auto-Ingestion (Product `post('save')` hook)
+## 9. Auto-Ingestion (Product `post('save')` hook)
 
 ```typescript
+// ProductSchema.post('save') — Tự động tạo embedding khi lưu sản phẩm
 ProductSchema.post('save', async function() {
-  // Tự động tạo embedding khi lưu sản phẩm
-  const text = `${this.name} ${brandName} ${this.description}`;
-  const vector = await AIService.generateEmbedding(text);
-  // Lưu vào ProductSEO
+  await this.populate(['brandId', 'categories']);
+  const brandName = (this.brandId as any)?.name || '';
+  const categoryNames = (this.categories as any[] || []).map(c => c?.name).filter(Boolean).join(' ');
+  const textToEmbed = `${this.name} ${brandName} ${this.description} ${categoryNames}`;
+  const vector = await AIService.generateEmbedding(textToEmbed);
   await ProductSEO.findOneAndUpdate(
-    { productId: this._id },
-    { $set: { embedding: vector } },
-    { upsert: true }
+    { productId: this._id, tenantId: this.tenantId },
+    { $set: { embedding: vector }, $setOnInsert: { slug, metaTitle, ... } },
+    { upsert: true, new: true }
   );
 });
 ```
 
 ---
 
-## 11. AI Endpoints
+## 10. AI Endpoints
 
 | Endpoint | Controller | Response Type | Batch? | Description |
 |----------|------------|---------------|--------|-------------|
@@ -431,7 +413,7 @@ ProductSchema.post('save', async function() {
 
 ---
 
-## 12. AI Caching Strategy
+## 11. AI Caching Strategy
 
 | Cache | Key Pattern | TTL | Purpose |
 |-------|-------------|-----|---------|
@@ -446,7 +428,7 @@ ProductSchema.post('save', async function() {
 
 ---
 
-## 13. Environment Variables cho AI
+## 12. Environment Variables cho AI
 
 ```bash
 # Bắt buộc
@@ -455,4 +437,3 @@ GEMINI_API_KEY=AIzaSyD...your_key
 # Optional (có fallback mặc định)
 GEMINI_MODEL=gemini-3.1-flash-lite
 GEMINI_EMBEDDING_MODEL=gemini-embedding-2
-```

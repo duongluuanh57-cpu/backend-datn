@@ -418,59 +418,6 @@ Content-Type: application/json
 
 ---
 
-## Product Images
-
-### Get Product Images
-```http
-GET /products/:productId/images
-```
-
-### Get Primary Image
-```http
-GET /products/:productId/images/primary
-```
-
-### Get Image Count
-```http
-GET /products/:productId/images/count
-```
-
-### Add Image
-```http
-POST /products/images
-Content-Type: application/json
-
-{ "productId": "...", "url": "https://..." }
-```
-
-### Add Multiple Images
-```http
-POST /products/images/bulk
-Content-Type: application/json
-
-{ "productId": "...", "images": ["https://...", "https://..."] }
-```
-
-### Update Image URL
-```http
-PUT /products/images/:imageId
-Content-Type: application/json
-
-{ "url": "https://..." }
-```
-
-### Delete Image
-```http
-DELETE /products/images/:imageId
-```
-
-### Delete All Product Images
-```http
-DELETE /products/:productId/images
-```
-
----
-
 ## Brands
 
 ### List Brands
@@ -541,6 +488,50 @@ PATCH /api/tags/:id
 ### Delete Tag (Admin/Subadmin)
 ```http
 DELETE /api/tags/:id
+```
+
+---
+
+## Categories
+
+### List Categories
+```http
+GET /api/categories
+```
+
+### Get Category by ID
+```http
+GET /api/categories/:id
+```
+
+### Create Category (Admin/Subadmin)
+```http
+POST /api/categories
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "name": "Nước hoa Unisex", "slug": "nuoc-hoa-unisex" }
+```
+
+### Update Category (Admin/Subadmin)
+```http
+PATCH /api/categories/:id
+Authorization: Bearer <token>
+```
+
+### Delete Category (Admin/Subadmin)
+```http
+DELETE /api/categories/:id
+Authorization: Bearer <token>
+```
+
+### Bulk Delete Categories (Admin/Subadmin)
+```http
+POST /api/categories/bulk-delete
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "ids": ["id1", "id2", "..."] }
 ```
 
 ---
@@ -749,7 +740,7 @@ Authorization: Bearer <token>
 
 ## Payments
 
-All endpoints require `Authorization: Bearer <token>` with `ADMIN` or `SUBADMIN` role.
+All endpoints require `Authorization: Bearer <token>` with `ADMIN` or `SUBADMIN` role, except `POST /api/payments` which requires any authenticated user.
 
 ### List Payments
 ```http
@@ -814,6 +805,133 @@ Authorization: Bearer <token>
 
 ## AI
 
+### Generate AI Response
+```http
+POST /api/ai/generate
+Content-Type: application/json
+
+{ "prompt": "What is your best perfume for men?" }
+
+Response: 200 { "success": true, "data": { "result": "..." } }
+```
+
+### Generate Product Content
+```http
+POST /api/ai/generate-product
+Content-Type: application/json
+
+{ "name": "Chanel No.5" }
+
+Response: 200 { "success": true, "data": { "product": { ... } } }
+```
+
+### Generate Brand Story
+```http
+POST /api/ai/generate-brand
+Content-Type: application/json
+
+{ "name": "Chanel" }
+
+Response: 200 { "success": true, "data": { "brand": { ... } } }
+```
+
+### Run Agent (Multi-agent Workflow)
+```http
+POST /api/ai/agent/run
+Content-Type: application/json
+
+{ "prompt": "Write a marketing plan for spring collection" }
+
+Response: 200 { "success": true, "data": { "result": "..." } }
+```
+
+### Support Chat (Multi-agent + Eval)
+```http
+POST /api/ai/support/chat
+Content-Type: application/json
+
+{ "prompt": "I need help choosing a perfume", "history": [...] }
+
+Response: 200 { "success": true, "data": { "result": "..." } }
+```
+
+### Chat Stream (User — Vercel AI SDK)
+```http
+POST /api/ai/chat
+Content-Type: application/json
+
+{ "prompt": "What perfumes are trending?", "history": [...] }
+
+Response: 200 — SSE stream (text/event-stream)
+```
+
+### Admin Chat (Auth Required)
+```http
+POST /api/ai/admin/chat
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "prompt": "Show me sales data", "history": [...] }
+
+Response: 200 — SSE stream (text/event-stream)
+```
+
+### Autocomplete
+```http
+POST /api/ai/autocomplete
+Content-Type: application/json
+
+{ "query": "floral perfume" }
+
+Response: 200 { "success": true, "data": { "suggestions": [...] } }
+```
+
+### Suggest Price
+```http
+POST /api/ai/suggest-price
+Content-Type: application/json
+
+{ "productName": "Chanel No.5", "brand": "Chanel", "category": "Eau de Parfum" }
+
+Response: 200 { "success": true, "data": { "suggestedPrice": 1500000, "marketRange": "1.2M - 2.5M" } }
+```
+
+### Feedback (Rating)
+```http
+POST /api/ai/feedback
+Content-Type: application/json
+
+{ "responseId": "...", "rating": 5, "comment": "Very helpful!" }
+```
+
+### Scan Gallery Image (Vision)
+```http
+POST /api/ai/scan-gallery-image
+Content-Type: application/json
+
+{ "imageUrl": "https://..." }
+
+Response: 200 { "success": true, "data": { "title": "...", "quote": "...", "titleEn": "...", "quoteEn": "..." } }
+```
+
+### AI Health Check
+```http
+GET /api/ai/health
+
+Response: 200 { "success": true, "data": { "status": "healthy", "...": "..." } }
+```
+
+---
+
+## Content
+
+### Search Content
+```http
+GET /api/content/search?q=perfume+guide
+
+Response: 200 { "success": true, "data": [ { "_id": "...", "title": "...", "content": "...", ... } ] }
+```
+
 ---
 
 ## Stats
@@ -859,6 +977,20 @@ Upstash-Signature: <signature>
 ### Daily Cleanup
 ```http
 POST /api/jobs/daily-cleanup
+Content-Type: application/json
+Upstash-Signature: <signature>
+```
+
+### Self-Healing
+```http
+POST /api/jobs/self-heal
+Content-Type: application/json
+Upstash-Signature: <signature>
+```
+
+### Failover Check
+```http
+POST /api/jobs/failover-check
 Content-Type: application/json
 Upstash-Signature: <signature>
 ```
@@ -925,4 +1057,3 @@ Response: 200 { "message": "🚀 Elite SaaS Backend API is running smoothly!", "
   "success": false,
   "message": "Error description"
 }
-```

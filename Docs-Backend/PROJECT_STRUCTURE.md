@@ -43,10 +43,16 @@ HTTP Request
 │  • AgentService — LangGraph multi-agent workflow           │
 │  • SearchService — Hybrid search (keyword + semantic)      │
 │  • ImageService — Sharp optimization + R2 upload           │
+│  • CategoryService — Category CRUD                         │
+│  • ContentSearchService — Search content                   │
 │  • QStashService — Background job queue                    │
 │  • StatsService — Dashboard analytics                      │
 │  • EmailService — SMTP (Gmail/Nodemailer)                 │
-│  + 14 more services...                                     │
+│  • PaymentService — Payment CRUD + lifecycle               │
+│  • VoucherService — Voucher CRUD + validate                │
+│  • FailoverService — Multi-region failover                 │
+│  • SelfHealingService — Auto-recover DB/Redis              │
+│  + 12 more services...                                     │
 └──────────────────────┬──────────────────────────────────────┘
                        │
                        ▼
@@ -58,7 +64,7 @@ HTTP Request
                        │
                        ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  Models (Mongoose Schemas — 18 collections)                 │
+│  Models (Mongoose Schemas — 24 collections)                 │
 │  • Multi-tenancy plugin (tenantId auto-filter)              │
 │  • Virtual fields, indexes, hooks (post('save') AI train)  │
 │  • MongoDB Atlas vector search (3072d embeddings)          │
@@ -96,9 +102,15 @@ Backend-api/
 │   ├── API_CONVENTIONS.md        # API design conventions
 │   ├── API_REFERENCE.md          # Complete endpoint listing
 │   ├── CODING_STANDARDS.md       # Code patterns & best practices
-│   ├── DATABASE_SCHEMA.md        # All 18 collections
+│   ├── DATABASE_SCHEMA.md        # All 24 collections
 │   ├── AI_ARCHITECTURE.md        # AI system deep dive
-│   └── ENV_VARIABLES.md          # Environment guide
+│   ├── ENV_VARIABLES.md          # Environment guide
+│   ├── PAYMENT_VOUCHER.md        # Payment & voucher system
+│   ├── BATCH_CONCURRENCY.md      # Batch & concurrency
+│   ├── FAILOVER_SELFHEALING.md   # Failover & self-healing
+│   ├── DEPLOYMENT_GUIDE.md       # Deployment instructions
+│   ├── TESTING_GUIDE.md          # Testing guide
+│   └── BATCH_CONCURRENCY.md      # Batch & concurrency
 │
 ├── edge/
 │   └── worker.ts                 # Cloudflare Worker (edge caching)
@@ -127,23 +139,24 @@ Backend-api/
     │   ├── errorHandler.ts       # Global error handler (4 layers)
     │   └── qstashMiddleware.ts   # Upstash QStash signature verify
     │
-    ├── controllers/              # 21 HTTP controllers (barrel files)
+    ├── controllers/              # 22 HTTP controllers (barrel files)
     │   ├── AuthController.ts      # Barrel → auth/
     │   ├── TwoFactorController.ts # 2FA setup, enable, verify
     │   ├── OAuthController.ts    # Google OAuth flow
     │   ├── UserController.ts     # User CRUD (admin)
     │   ├── UserAddressController.ts # Barrel → userAddress/
     │   ├── ProductController.ts  # Barrel → product/
-    │   ├── ProductImageController.ts # Image CRUD per product
     │   ├── BrandController.ts    # Brand CRUD + origins
+    │   ├── CategoryController.ts # Category CRUD
     │   ├── TagController.ts      # Tag CRUD
     │   ├── TaxonomyController.ts # Taxonomy CRUD (unified)
     │   ├── TaxonomyTermController.ts # Barrel → taxonomy/
     │   ├── OrderController.ts    # Barrel → order/
     │   ├── HomepageConfigController.ts # Config CRUD
     │   ├── MediaController.ts    # Upload (R2/ImgBB/URL)
+    │   ├── ContentController.ts  # Content CRUD
     │   ├── JobController.ts      # QStash job handlers
-    │   ├── AICoreController.ts   # generate, runAgent
+    │   ├── AICoreController.ts   # generate, runAgent, healthCheck
     │   ├── AIChatController.ts   # Barrel → aiChat/
     │   ├── AICatalogController.ts # Barrel → aiCatalog/
     │   ├── AIVisionController.ts # scanGalleryImage
@@ -161,6 +174,8 @@ Backend-api/
     │   │   ├── aiCatalogGenerateController.ts # generateProduct, generateBrand
     │   │   ├── aiCatalogAutocompleteController.ts # autocomplete
     │   │   └── aiCatalogPriceController.ts # suggestPrice
+    │   ├── content/               # Content sub-controllers
+    │   │   └── ContentController.ts     # search
     │   ├── order/                 # Order sub-controllers
     │   │   ├── orderQueryController.ts    # getMyOrders, getOrderById, getAllOrdersForAdmin
     │   │   └── orderMutationController.ts # createOrder, updateOrderStatus, cancelOrder
@@ -173,28 +188,27 @@ Backend-api/
     │   └── userAddress/           # UserAddress sub-controllers
     │       └── userAddressController.ts   # CRUD addresses + setDefault
     │
-    ├── services/                  # 29 business logic services (barrel files)
-    │   ├── AdminToolService.ts    # Barrel → adminTool/
-    │   ├── AIService.ts           # Barrel → ai/
-    │   ├── ProductService.ts      # Barrel → product/
+    ├── services/                  # 28 business logic services (barrel files)
     │   ├── AuthService.ts         # JWT, bcrypt, audit log, PostHog
     │   ├── OAuthService.ts        # Google OAuth logic
     │   ├── TwoFactorService.ts    # TOTP (speakeasy)
     │   ├── EmailService.ts        # SMTP (Nodemailer + Gmail)
-    │   ├── ProductImageService.ts # Image operations
-    │   ├── ImageService.ts        # Sharp optimize + R2 upload/delete
+    │   ├── ImageService.ts        # Sharp optimize + R2 upload/delete (barrel → image/)
     │   ├── BrandService.ts        # Brand CRUD
+    │   ├── CategoryService.ts     # Category CRUD
     │   ├── TagService.ts          # Tag CRUD
     │   ├── TaxonomyService.ts     # Taxonomy CRUD (v1)
     │   ├── TaxonomyTermService.ts # TaxonomyTerm CRUD (v2)
+    │   ├── ProductService.ts      # Barrel → product/
     │   ├── SearchService.ts       # Hybrid search (MongoDB aggregate pipeline)
+    │   ├── ContentSearchService.ts # Content search
+    │   ├── AIService.ts           # Barrel → ai/
     │   ├── AgentService.ts        # LangGraph multi-agent (Research → Write → Review)
+    │   ├── AdminToolService.ts    # Barrel → adminTool/
     │   ├── RedisService.ts        # Permanent AI cache service
     │   ├── QStashService.ts       # Upstash QStash publish + schedule
     │   ├── HealthCheckService.ts  # DB + Redis ping checks
     │   ├── StatsService.ts        # Dashboard stats (revenue, orders, visits)
-    │   ├── SupportService.ts      # Chat orchestration (RAG + Agent + Eval)
-    │   ├── EvalService.ts         # LLM-as-a-Judge (faithfulness scoring)
     │   ├── FailoverService.ts     # Multi-region failover monitor
     │   ├── SelfHealingService.ts  # Auto-recover DB/Redis
     │   ├── PostHogService.ts      # Analytics events + feature flags
@@ -202,7 +216,8 @@ Backend-api/
     │   ├── VoucherService.ts      # Voucher CRUD + validate + increment usage
     │   ├── DocsService.ts         # Fetch GitHub docs cho Admin AI context
     │   ├── BatchBufferService.ts  # Batch gom nhiều chat request vào 1 lần gọi Gemini
-    │   └── ConcurrencyLimiter.ts  # Giới hạn 10 Gemini call đồng thời, queue 200
+    │   ├── ConcurrencyLimiter.ts  # Giới hạn 10 Gemini call đồng thời, queue 200
+    │   └── FuzzyMatchCache.ts     # Fuzzy matching cache cho AI autocomplete
     │   │
     │   ├── adminTool/             # AdminTool sub-services
     │   │   ├── adminToolDeclarations.ts # getDeclarations, getUserDeclarations
@@ -213,6 +228,9 @@ Backend-api/
     │   │   ├── aiProductService.ts       # generateProduct, generateBrand
     │   │   ├── aiCatalogService.ts       # autocomplete, suggestPrice, classify
     │   │   └── aiImageService.ts         # scanGalleryImage, identifyProduct
+    │   ├── image/                 # Image sub-services
+    │   │   ├── imageR2Service.ts         # R2 upload/delete
+    │   │   └── imageOptimizerService.ts  # Sharp compress
     │   └── product/               # Product sub-services
     │       ├── productQueryService.ts    # getNewProducts, getLimitedProducts, getTrendingProducts, getSaleProducts, getAllProducts, getProductById
     │       ├── productMutationService.ts # createProduct, updateProduct, deleteProduct, bulkDeleteProducts
@@ -223,6 +241,7 @@ Backend-api/
     │   ├── UserAddress.ts        # user_addresses
     │   ├── Brand.ts              # brands
     │   ├── Tag.ts                # tags
+    │   ├── Category.ts           # categories
     │   ├── Product.ts            # products
     │   ├── ProductImage.ts       # product_images
     │   ├── ProductVariant.ts     # product_variants
@@ -232,6 +251,7 @@ Backend-api/
     │   ├── ProductTaxonomyTerm.ts # product_taxonomy_terms (v2)
     │   ├── Taxonomy.ts           # taxonomies
     │   ├── TaxonomyTerm.ts       # taxonomy_terms
+    │   ├── Media.ts              # media
     │   ├── Segment.ts            # segments (legacy)
     │   ├── ScentGroup.ts         # scent_groups (legacy)
     │   ├── Concentration.ts      # concentrations (legacy)
@@ -244,7 +264,7 @@ Backend-api/
     │   ├── Payment.ts            # payments
     │   └── Voucher.ts            # vouchers
     │
-    ├── routes/                   # 20 route files
+    ├── routes/                   # 22 route files
     │   ├── auth.routes.ts        # POST register, login, refresh, logout...
     │   ├── twoFactor.routes.ts   # POST setup, enable, verify
     │   ├── oauth.routes.ts       # GET google, google/callback
@@ -253,19 +273,20 @@ Backend-api/
     │   ├── product.routes.ts     # CRUD + collections (new, limited, trending, sale)
     │   ├── brand.routes.ts       # CRUD + origins
     │   ├── tag.routes.ts         # CRUD
+    │   ├── category.routes.ts    # CRUD homepage categories
     │   ├── taxonomy.routes.ts    # CRUD v1 (unified)
     │   ├── taxonomy-v2.routes.ts # CRUD v2 (Taxonomy + Terms)
     │   ├── segment.routes.ts     # Legacy alias → taxonomy
     │   ├── order.routes.ts       # GET my-orders, :id, /admin/*
     │   ├── homepage.routes.ts    # GET, PUT config
-    │   ├── media.routes.ts       # POST upload-r2, upload-imgbb, upload-url
+    │   ├── media.routes.ts       # POST upload-r2, upload-url
+    │   ├── content.routes.ts     # GET search
     │   ├── ai.routes.ts          # POST generate, chat, agent, support, feedback...
     │   ├── stats.routes.ts       # GET dashboard, POST track-visit
     │   ├── voucher.routes.ts     # GET, POST, PATCH, DELETE vouchers
     │   ├── payment.routes.ts     # GET, POST, PATCH payments
-    │   ├── category.routes.ts    # GET homepage categories
     │   ├── job.routes.ts         # POST welcome-email, daily-cleanup, self-heal, failover-check
-    │   └── productImageRoutes.ts # Image CRUD per product
+    │   └── productImageRoutes.ts # Image CRUD per product (archived)
     │
     ├── types/                    # TypeScript type definitions
     │   ├── user.types.ts         # Zod schemas: Register, Login, ChangePassword

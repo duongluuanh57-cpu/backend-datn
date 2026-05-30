@@ -15,6 +15,7 @@ users                   # Tài khoản người dùng (auth, OAuth, 2FA, roles)
 user_addresses          # Địa chỉ giao hàng của user
 brands                  # Thương hiệu sản phẩm
 tags                    # Tags (nhãn) cho sản phẩm
+categories              # Danh mục sản phẩm (homepage grouping)
 products                # Sản phẩm chính (catalog)
 product_variants        # Biến thể sản phẩm (size, price, stock)
 product_images          # Hình ảnh sản phẩm (URLs)
@@ -24,6 +25,7 @@ product_taxonomies      # Bảng trung gian Product ↔ Taxonomy (v1)
 product_taxonomy_terms  # Bảng trung gian Product ↔ TaxonomyTerm (v2)
 taxonomies              # Loại phân loại (cha): Scent Group, Concentration, Segment
 taxonomy_terms          # Giá trị phân loại (con)
+media                   # Media upload records (R2/ImgBB)
 segments                # LEGACY: Phân khúc (thay bằng taxonomy)
 scent_groups            # LEGACY: Nhóm hương (thay bằng taxonomy)
 concentrations          # LEGACY: Nồng độ (thay bằng taxonomy)
@@ -50,7 +52,8 @@ vouchers                # Mã giảm giá (percentage/fixed, date-range, usage-l
   email: string,                 // Unique, indexed
   passwordHash: string,          // Bcrypt hashed (optional for OAuth users)
   role: 'USER' | 'ADMIN' | 'SUBADMIN',
-  memberTier: 'MEMBER' | 'VIP' | 'ELITE MEMBER',
+  memberTier: 'MEMBER' | 'Bac' | 'Vang' | 'KimCuong',
+  totalSpent: number,            // Default: 0
   tenantId: string,              // Multi-tenancy
   status: 'active' | 'inactive' | 'suspended',
 
@@ -82,7 +85,12 @@ vouchers                # Mã giảm giá (percentage/fixed, date-range, usage-l
 - `{ email: 1 }` — unique
 - `{ tenantId: 1 }` — multi-tenancy filter
 - `{ status: 1 }` — filter active users
-- `{ oauthProvider: 1, oauthId: 1 }` — OAuth lookup
+- `{ oauthProvider: 1 }` — OAuth lookup
+- `{ oauthId: 1 }` — OAuth lookup
+- `{ tenantId: 1, createdAt: -1 }` — sort
+- `{ tenantId: 1, username: 1 }` — unique per tenant
+- `{ tenantId: 1, email: 1 }` — unique per tenant
+- `{ tenantId: 1, role: 1 }` — filter by role
 
 ---
 
@@ -149,7 +157,29 @@ vouchers                # Mã giảm giá (percentage/fixed, date-range, usage-l
 
 ---
 
-### 5. Products (`products`)
+### 5. Categories (`categories`)
+
+```typescript
+{
+  _id: ObjectId,
+  tenantId: string,
+  name: string,                  // Indexed
+  slug: string,                  // Indexed (URL-friendly)
+  status: 'active' | 'inactive',
+  sortOrder?: number,            // Default: 0
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+**Indexes:**
+- `{ tenantId: 1, slug: 1 }` — unique compound
+- `{ tenantId: 1, sortOrder: 1 }` — sort
+- `{ tenantId: 1, name: 1 }` — search
+
+---
+
+### 6. Products (`products`)
 
 ```typescript
 {
@@ -159,8 +189,9 @@ vouchers                # Mã giảm giá (percentage/fixed, date-range, usage-l
   brandId: ObjectId,             // Reference to Brand
   price: number,                 // Base price (lowest variant price)
   description: string,
+  image?: string,                // Primary image URL (denormalized)
+  categories?: ObjectId[],       // References to Category
   variants: ObjectId[],          // References to ProductVariant
-  gender?: string,               // 'male' | 'female' | 'unisex'
   rating: number,                // Default: 5
   reviewsCount: number,          // Default: 0
   quantityInStock: number,       // Total stock (from variants)
@@ -177,13 +208,17 @@ vouchers                # Mã giảm giá (percentage/fixed, date-range, usage-l
 - `{ tenantId: 1, name: 1 }` — search
 - `{ tenantId: 1, brandId: 1 }` — filter by brand
 - `{ tenantId: 1, price: 1 }` — sort by price
+- `{ tenantId: 1, createdAt: -1 }` — sort by date
+- `{ tenantId: 1, quantityInStock: 1 }` — filter stock
+- `{ tenantId: 1, soldCount: -1, createdAt: -1 }` — trending sort
+- `{ name: 'text', description: 'text' }` — full-text search
 
 **Hooks:**
 - `post('save')` — Tự động gọi `AIService.generateEmbedding()` để tạo vector embedding (3072 dimensions), lưu vào `ProductSEO`
 
 ---
 
-### 6. Product Variants (`product_variants`)
+### 7. Product Variants (`product_variants`)
 
 ```typescript
 {
@@ -205,7 +240,7 @@ vouchers                # Mã giảm giá (percentage/fixed, date-range, usage-l
 
 ---
 
-### 7. Product Images (`product_images`)
+### 8. Product Images (`product_images`)
 
 ```typescript
 {
@@ -222,7 +257,7 @@ vouchers                # Mã giảm giá (percentage/fixed, date-range, usage-l
 
 ---
 
-### 8. Product SEO (`product_seo`)
+### 9. Product SEO (`product_seo`)
 
 ```typescript
 {
@@ -250,7 +285,7 @@ vouchers                # Mã giảm giá (percentage/fixed, date-range, usage-l
 
 ---
 
-### 9. Product Tags (`product_tags`) — Junction Table
+### 10. Product Tags (`product_tags`) — Junction Table
 
 ```typescript
 {
@@ -269,7 +304,7 @@ vouchers                # Mã giảm giá (percentage/fixed, date-range, usage-l
 
 ---
 
-### 10. Product Taxonomies (`product_taxonomies`) — v1 Junction
+### 11. Product Taxonomies (`product_taxonomies`) — v1 Junction
 
 ```typescript
 {
@@ -285,7 +320,7 @@ vouchers                # Mã giảm giá (percentage/fixed, date-range, usage-l
 
 ---
 
-### 11. Product Taxonomy Terms (`product_taxonomy_terms`) — v2 Junction
+### 12. Product Taxonomy Terms (`product_taxonomy_terms`) — v2 Junction
 
 ```typescript
 {
@@ -300,7 +335,7 @@ vouchers                # Mã giảm giá (percentage/fixed, date-range, usage-l
 
 ---
 
-### 12. Taxonomies (`taxonomies`) — v2 Parent
+### 13. Taxonomies (`taxonomies`) — v2 Parent
 
 ```typescript
 {
@@ -320,7 +355,7 @@ vouchers                # Mã giảm giá (percentage/fixed, date-range, usage-l
 
 ---
 
-### 13. Taxonomy Terms (`taxonomy_terms`) — v2 Child
+### 14. Taxonomy Terms (`taxonomy_terms`) — v2 Child
 
 ```typescript
 {
@@ -341,7 +376,25 @@ vouchers                # Mã giảm giá (percentage/fixed, date-range, usage-l
 
 ---
 
-### 14. Segments / Scent Groups / Concentrations (`segments`, `scent_groups`, `concentrations`) — LEGACY
+### 15. Media (`media`)
+
+```typescript
+{
+  _id: ObjectId,
+  tenantId: string,
+  url: string,                   // Compressed image URL (Cloudflare R2)
+  displayUrl: string,            // Original display URL
+  originalBytes: number,         // Original file size
+  compressedBytes: number,       // Compressed file size (after Sharp WebP)
+  filename: string,              // Original filename
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+---
+
+### 16. Segments / Scent Groups / Concentrations (`segments`, `scent_groups`, `concentrations`) — LEGACY
 
 Cả 3 collection đều có cấu trúc giống hệt:
 
@@ -365,7 +418,7 @@ Cả 3 collection đều có cấu trúc giống hệt:
 
 ---
 
-### 15. Orders (`orders`)
+### 17. Orders (`orders`)
 
 ```typescript
 {
@@ -394,7 +447,7 @@ Cả 3 collection đều có cấu trúc giống hệt:
 
 ---
 
-### 16. Order Items (`order_items`)
+### 18. Order Items (`order_items`)
 
 ```typescript
 {
@@ -417,7 +470,7 @@ Cả 3 collection đều có cấu trúc giống hệt:
 
 ---
 
-### 17. Homepage Config (`homepage_configs`)
+### 19. Homepage Config (`homepage_configs`)
 
 ```typescript
 {
@@ -480,7 +533,7 @@ Cả 3 collection đều có cấu trúc giống hệt:
 
 ---
 
-### 18. Knowledge (`knowledge`) — AI RAG
+### 20. Knowledge (`knowledge`) — AI RAG
 
 ```typescript
 {
@@ -496,7 +549,7 @@ Cả 3 collection đều có cấu trúc giống hệt:
 
 ---
 
-### 19. Audit Logs (`audit_logs`)
+### 21. Audit Logs (`audit_logs`)
 
 ```typescript
 {
@@ -515,7 +568,7 @@ Cả 3 collection đều có cấu trúc giống hệt:
 
 ---
 
-### 20. Content (`contents`)
+### 22. Content (`contents`)
 
 ```typescript
 {
@@ -534,7 +587,7 @@ Cả 3 collection đều có cấu trúc giống hệt:
 
 ---
 
-### 21. Payments (`payments`)
+### 23. Payments (`payments`)
 
 ```typescript
 {
@@ -556,7 +609,7 @@ Cả 3 collection đều có cấu trúc giống hệt:
 
 ---
 
-### 22. Vouchers (`vouchers`)
+### 24. Vouchers (`vouchers`)
 
 ```typescript
 {
@@ -590,6 +643,7 @@ User ──< UserAddress          (1 user → nhiều địa chỉ)
 User ──< Order                (1 user → nhiều đơn hàng)
 
 Brand ──< Product             (1 brand → nhiều sản phẩm)
+Category ──< Product          (nhiều-nhiều qua categories array)
 
 Product ──< ProductVariant    (1 product → nhiều variants)
 Product ──< ProductImage      (1 product → nhiều images)
@@ -635,11 +689,11 @@ export function multiTenancyPlugin(schema: Schema) {
 
 ### Compound Indexes
 ```javascript
-{ tenantId: 1, slug: 1 }           // Unique: Taxonomy, Tag, Segment, ...
+{ tenantId: 1, slug: 1 }           // Unique: Taxonomy, Tag, Category, Segment, ...
 { tenantId: 1, email: 1 }          // Unique: User
-{ tenantId: 1, name: 1 }           // Search: Product, Brand
-{ tenantId: 1, status: 1 }         // Filter: Product, Order
-{ tenantId: 1, createdAt: -1 }     // Sort: Order, AuditLog
+{ tenantId: 1, name: 1 }           // Search: Product, Brand, Category
+{ tenantId: 1, status: 1 }         // Filter: Product, Order, Voucher
+{ tenantId: 1, createdAt: -1 }     // Sort: Order, AuditLog, Product
 ```
 
 ### Junction Table Indexes
@@ -665,4 +719,3 @@ export function multiTenancyPlugin(schema: Schema) {
 ```bash
 mongodump --uri="mongodb+srv://..." --out=./backup
 mongorestore --uri="mongodb+srv://..." ./backup
-```
