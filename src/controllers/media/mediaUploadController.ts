@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { ImageService } from '../../services/ImageService.ts';
+import { Media } from '../../models/Media.ts';
 
 function clampInt(value: unknown, fallback: number, min: number, max: number): number {
   const n = typeof value === 'string' || typeof value === 'number' ? Number(value) : NaN;
@@ -54,6 +55,17 @@ export class MediaUploadController {
         folder
       });
 
+      await Media.create({
+        url: result.url,
+        displayUrl: result.displayUrl,
+        originalBytes: result.originalBytes,
+        compressedBytes: result.compressedBytes,
+        filename,
+        tenantId: (req as any).user?.tenantId || 'default-tenant',
+      }).catch((err) => {
+        console.error('[Media] Failed to save media record:', err);
+      });
+
       return reply.status(200).send({
         success: true,
         data: result
@@ -102,7 +114,6 @@ export class MediaUploadController {
         throw new Error('Ảnh tải về bị rỗng.');
       }
 
-      // Trích xuất tên file từ URL
       const filename = trimmedUrl.split('/').pop()?.split('?')[0] || 'downloaded-image';
 
       const result = await ImageService.compressAndUpload(fileBuffer, {
@@ -110,6 +121,17 @@ export class MediaUploadController {
         quality: clampInt(quality, 90, 40, 100),
         name: filename,
         folder
+      });
+
+      await Media.create({
+        url: result.url,
+        displayUrl: result.displayUrl,
+        originalBytes: result.originalBytes,
+        compressedBytes: result.compressedBytes,
+        filename,
+        tenantId: (req as any).user?.tenantId || 'default-tenant',
+      }).catch((err) => {
+        console.error('[Media] Failed to save media record:', err);
       });
 
       return reply.status(200).send({

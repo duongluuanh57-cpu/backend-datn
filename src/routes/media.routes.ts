@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import multipart from '@fastify/multipart';
 import { MediaController } from '../controllers/MediaController.ts';
+import { MediaLibraryController } from '../controllers/media/mediaLibraryController.ts';
 
 export async function mediaRoutes(app: FastifyInstance) {
   await app.register(multipart, {
@@ -59,6 +60,19 @@ export async function mediaRoutes(app: FastifyInstance) {
       }
     },
     MediaController.deleteR2Folder
+  );
+
+  app.get(
+    '/',
+    {
+      config: {
+        rateLimit: {
+          max: 60,
+          timeWindow: '1 minute'
+        }
+      }
+    },
+    MediaLibraryController.listMedia
   );
 
   app.post(
