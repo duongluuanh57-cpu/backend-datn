@@ -8,7 +8,7 @@ import { DocsFetcher } from './docs/docsFetcher.ts';
 import { DocsSelector } from './docs/docsSelector.ts';
 
 export class DocsService {
-  static getAllDocs = DocsSelector.getAllDocs;
-  static getRelevantDocs = DocsSelector.getRelevantDocs;
-  static clearCache = DocsFetcher.clearCache;
+  static async getAllDocs() { return DocsSelector.getAllDocs(); }
+  static async getRelevantDocs(query: string) { return DocsSelector.getRelevantDocs(query); }
+  static clearCache() { DocsFetcher.clearCache(); }
 }
