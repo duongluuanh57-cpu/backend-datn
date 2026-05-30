@@ -70,6 +70,4 @@ export async function healthCheck(): Promise<{ status: 'healthy' | 'unhealthy', 
 }
 
 export const PRIMARY_MODEL = 'gemini-3.1-flash-lite';
-export const FALLBACK_MODEL = 'gemini-2.0-flash-lite';
-export const SECONDARY_FALLBACK_MODEL = 'gemini-1.5-flash-lite';
 export const CACHE_TTL = 60 * 60 * 24;

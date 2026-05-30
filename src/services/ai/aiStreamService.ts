@@ -1,20 +1,17 @@
 import { HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
-import { getGeminiClient, PRIMARY_MODEL, FALLBACK_MODEL, SECONDARY_FALLBACK_MODEL } from './aiClient.ts';
+import { getGeminiClient, PRIMARY_MODEL } from './aiClient.ts';
 import { geminiLimiter } from '../ConcurrencyLimiter.ts';
 
 /**
- * createChatStream - Fallback cascade with retry: Gemini 3.1 Flash Lite exclusively with retry attempts
+ * createChatStream - Retry on Gemini 3.1 Flash Lite with exponential backoff
  */
 export async function createChatStream(messages: any[], systemPrompt?: string, image?: string) {
-  const modelsToTry = [PRIMARY_MODEL, FALLBACK_MODEL, SECONDARY_FALLBACK_MODEL];
-  const maxRetries = 2;
-  let retryCount = 0;
+  const maxRetries = 3;
 
-  const tryStream = async (mName: string) => {
-    console.log(`🌊 [AIService] Opening Stream with: ${mName}`);
+  const tryStream = async () => {
     const client = getGeminiClient();
     const model = client.getGenerativeModel({
-      model: mName,
+      model: PRIMARY_MODEL,
       systemInstruction: systemPrompt || "Bạn là trợ lý AI chuyên nghiệp.",
       safetySettings: [
         { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -41,71 +38,48 @@ export async function createChatStream(messages: any[], systemPrompt?: string, i
     return await model.generateContentStream({ contents });
   };
 
-  // Retry loop - xoay vòng qua tất cả models nhiều lần
-  while (retryCount <= maxRetries) {
-    for (let i = 0; i < modelsToTry.length; i++) {
-      const currentModel = modelsToTry[i];
-      const attemptNumber = retryCount * modelsToTry.length + i + 1;
-      const totalAttempts = (maxRetries + 1) * modelsToTry.length;
-
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const release = await geminiLimiter.acquire(attempt === 1 ? 1 : 0);
+      let result;
       try {
-        console.log(`🎯 [AIService] Attempt ${attemptNumber}/${totalAttempts}: ${currentModel} (Retry cycle: ${retryCount + 1}/${maxRetries + 1})`);
-
-        // Acquire concurrency slot trước khi gọi Gemini
-        const release = await geminiLimiter.acquire(attemptNumber === 1 ? 1 : 0);
-        let result;
-        try {
-          result = await tryStream(currentModel);
-        } finally {
-          release();
-        }
-
-        const stream = new ReadableStream({
-          async start(controller) {
-            const encoder = new TextEncoder();
-            try {
-              for await (const chunk of result.stream) {
-                const text = chunk.text();
-                if (text) controller.enqueue(encoder.encode(text));
-              }
-              controller.close();
-            } catch (e: any) {
-              console.error(`❌ Stream Inner Error on ${currentModel}:`, e.message);
-              controller.error(e);
-            }
-          }
-        });
-
-        console.log(`✅ [AIService] Stream successful with: ${currentModel} (after ${attemptNumber} attempts)`);
-        return new Response(stream, { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
-
-      } catch (error: any) {
-        const isLastModelInCycle = i === modelsToTry.length - 1;
-        const isLastRetry = retryCount === maxRetries;
-        const nextModel = modelsToTry[(i + 1) % modelsToTry.length];
-
-        if (error.status === 503 || error.status === 429 || error.message?.includes('high demand') || error.message?.includes('overloaded')) {
-          if (!isLastModelInCycle) {
-            console.warn(`⚠️ [AIService] ${currentModel} is busy/overloaded. Trying next: ${nextModel}...`);
-            continue;
-          } else if (!isLastRetry) {
-            console.warn(`🔄 [AIService] All models busy in cycle ${retryCount + 1}. Retrying from start (cycle ${retryCount + 2})...`);
-            await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
-            break;
-          } else {
-            console.error(`❌ [AIService] All models exhausted after ${totalAttempts} attempts. Last error:`, error.message);
-            throw new Error(`All AI models are currently unavailable after ${totalAttempts} attempts. Please try again later.`);
-          }
-        } else {
-          console.error(`❌ [AIService] Fatal error on ${currentModel}:`, error.message);
-          throw error;
-        }
+        result = await tryStream();
+      } finally {
+        release();
       }
+
+      const stream = new ReadableStream({
+        async start(controller) {
+          const encoder = new TextEncoder();
+          try {
+            for await (const chunk of result.stream) {
+              const text = chunk.text();
+              if (text) controller.enqueue(encoder.encode(text));
+            }
+            controller.close();
+          } catch (e: any) {
+            controller.error(e);
+          }
+        }
+      });
+
+      return new Response(stream, { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+
+    } catch (error: any) {
+      if (
+        (error.status === 503 || error.status === 429 || error.message?.includes('overloaded'))
+        && attempt < maxRetries
+      ) {
+        const waitTime = 1000 * attempt;
+        console.warn(`⚠️ [AIService] ${PRIMARY_MODEL} busy (attempt ${attempt}/${maxRetries}). Retrying in ${waitTime}ms...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        continue;
+      }
+      throw error;
     }
-    retryCount++;
   }
 
-  throw new Error('Failed to create chat stream with any available model after all retries.');
+  throw new Error('Failed to create chat stream after all retries.');
 }
 
 /**
@@ -145,15 +119,14 @@ CÂU HỎI: "${item.question}"
 
   const batchPrompt = `${baseInstruction}\n\nCÁC CÂU HỎI:\n${questionsBlock}`;
 
-  const modelsToTry = [PRIMARY_MODEL, FALLBACK_MODEL, SECONDARY_FALLBACK_MODEL];
-  let lastError: Error | null = null;
+  const maxRetries = 3;
 
-  for (const modelName of modelsToTry) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const release = await geminiLimiter.acquire(1);
       try {
         const client = getGeminiClient();
-        const model = client.getGenerativeModel({ model: modelName });
+        const model = client.getGenerativeModel({ model: PRIMARY_MODEL });
         const result = await model.generateContent(batchPrompt);
         const text = result.response.text().trim();
         const parsed = JSON.parse(text);
@@ -167,10 +140,15 @@ CÂU HỎI: "${item.question}"
         release();
       }
     } catch (err: any) {
-      lastError = err;
-      console.warn(`⚠️ [BatchStream] ${modelName} failed:`, err.message);
-      continue;
+      if (attempt < maxRetries && (err.status === 503 || err.status === 429 || err.message?.includes('overloaded'))) {
+        const waitTime = 1000 * attempt;
+        console.warn(`⚠️ [BatchStream] ${PRIMARY_MODEL} busy (attempt ${attempt}/${maxRetries}). Retrying in ${waitTime}ms...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        continue;
+      }
+      throw err;
     }
   }
-  throw lastError || new Error('All models failed for batch chat stream');
+
+  throw new Error('Failed to create batch chat stream after all retries.');
 }

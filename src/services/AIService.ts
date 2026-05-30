@@ -3,13 +3,13 @@
  *
  * File này được giữ lại để backward compatibility.
  * Code thực tế đã được tách vào thư mục `services/ai/`:
- *   - aiClient.ts         → getGeminiClient, healthCheck, PRIMARY_MODEL, FALLBACK_MODEL, SECONDARY_FALLBACK_MODEL, CACHE_TTL
+ *   - aiClient.ts         → getGeminiClient, healthCheck, PRIMARY_MODEL, CACHE_TTL
  *   - aiVisionService.ts  → identifyProduct
  *   - aiStreamService.ts  → createChatStream, createBatchChatStream
  *   - aiResponseService.ts → generateResponse
  *   - aiEmbedding.ts       → generateEmbedding
  */
-export { getGeminiClient, healthCheck, PRIMARY_MODEL, FALLBACK_MODEL, SECONDARY_FALLBACK_MODEL, CACHE_TTL } from './ai/aiClient.ts';
+export { getGeminiClient, healthCheck, PRIMARY_MODEL, CACHE_TTL } from './ai/aiClient.ts';
 export { identifyProduct } from './ai/aiVisionService.ts';
 export { createChatStream, createBatchChatStream } from './ai/aiStreamService.ts';
 export { generateResponse } from './ai/aiResponseService.ts';
@@ -30,8 +30,6 @@ export class AIService {
   private static _genAI: any;
   private static CACHE_TTL = 60 * 60 * 24;
   private static PRIMARY_MODEL = 'gemini-3.1-flash-lite';
-  private static FALLBACK_MODEL = 'gemini-2.0-flash-lite';
-  private static SECONDARY_FALLBACK_MODEL = 'gemini-1.5-flash-lite';
 
   static async healthCheck() {
     return _healthCheck();
