@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "cross-env NODE_OPTIONS='--max-old-space-size=2048' node --watch --watch-path=src --strip-types src/server.ts",
+    "dev": "cross-env NODE_OPTIONS='--max-old-space-size=4096' node --watch --watch-path=src --strip-types src/server.ts",
     "build": "esbuild src/server.ts --bundle --platform=node --target=node22 --outfile=dist/server.js --format=esm --minify --external:sharp --external:dotenv --packages=external",
     "start": "node dist/server.js",
     "test": "vitest run",
@@ -13,6 +13,7 @@
     "migrate:orders": "node --strip-types src/scripts/migrate-order-items.ts",
     "migrate:taxonomies": "node --strip-types src/scripts/migrate-product-taxonomies.ts",
     "migrate:taxonomy-v2": "node --strip-types src/scripts/migrate-taxonomy.ts",
+    "migrate:embeddings": "node --strip-types src/scripts/migrate-product-embeddings.ts",
     "check:orders": "node --strip-types src/scripts/check-orders.ts",
     "seed:orders": "node --strip-types src/scripts/seed-orders.ts"
   },

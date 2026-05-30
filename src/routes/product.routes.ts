@@ -7,8 +7,15 @@ export async function productRoutes(app: FastifyInstance) {
   app.get('/new', ProductController.getNewProducts);
   app.get('/limited', ProductController.getLimitedProducts);
   app.get('/trending', ProductController.getTrendingProducts);
+  app.get('/public', ProductController.getPublicProducts);
   app.get('/sale', ProductController.getSaleProducts);
   
+  // Suggest / Autocomplete cho Navbar (must be before /:id)
+  app.get('/suggest', ProductController.suggestProducts);
+
+  // Bulk fetch (must be before /:id)
+  app.get('/bulk', ProductController.getBulkProducts);
+
   // Quản lý sản phẩm (CRUD)
   app.get('/', ProductController.getAllProducts);
   app.get('/:id', ProductController.getProductById);

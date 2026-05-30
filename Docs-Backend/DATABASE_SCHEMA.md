@@ -8,7 +8,7 @@
 
 ---
 
-## Collections Overview (18 collections)
+## Collections Overview (24 collections)
 
 ```
 users                   # Tài khoản người dùng (auth, OAuth, 2FA, roles)
@@ -33,6 +33,8 @@ homepage_configs        # Cấu hình trang chủ (banner, sections, gallery)
 contents                # Nội dung tĩnh (blog posts, pages)
 knowledge               # Knowledge base cho AI RAG
 audit_logs              # Audit trail cho bảo mật
+payments                # Thanh toán (lifecycle: pending → paid/failed → refunded)
+vouchers                # Mã giảm giá (percentage/fixed, date-range, usage-limited)
 ```
 
 ---
@@ -532,6 +534,55 @@ Cả 3 collection đều có cấu trúc giống hệt:
 
 ---
 
+### 21. Payments (`payments`)
+
+```typescript
+{
+  _id: ObjectId,
+  tenantId: string,
+  orderId: ObjectId,             // Reference to Order
+  method: 'cod' | 'bank_transfer' | 'credit_card' | 'momo' | 'zalopay',
+  amount: number,                // Tổng tiền đơn hàng
+  status: 'pending' | 'paid' | 'failed' | 'refunded',
+  transactionCode?: string,      // Mã giao dịch từ payment gateway
+  paidAt?: Date,
+  refundedAt?: Date,
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+**Indexes:** `{ tenantId: 1, orderId: 1 }`
+
+---
+
+### 22. Vouchers (`vouchers`)
+
+```typescript
+{
+  _id: ObjectId,
+  tenantId: string,
+  code: string,                  // Mã giảm giá, VD: "SALE50", uppercase, indexed
+  type: 'percentage' | 'fixed',  // percentage: giảm %, fixed: giảm số tiền
+  value: number,                 // percentage: 10 = 10%, fixed: 50000 = 50.000đ
+  minOrderAmount: number,        // Default: 0
+  maxDiscount?: number,          // Giảm tối đa (chỉ cho percentage)
+  maxUsage: number,              // 0 = không giới hạn
+  usedCount: number,             // Default: 0
+  startDate: Date,
+  endDate: Date,
+  status: 'active' | 'inactive',
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+**Indexes:**
+- `{ tenantId: 1, code: 1 }` — unique compound
+- `{ tenantId: 1, status: 1 }` — filter active
+
+---
+
 ## Relationships Diagram
 
 ```
@@ -550,6 +601,7 @@ Taxonomy ──< TaxonomyTerm     (1 taxonomy → nhiều terms)
 
 Order ──< OrderItem           (1 order → nhiều items)
 OrderItem >── Product         (nhiều items → 1 product)
+Order ──< Payment             (1 order → nhiều payments)
 ```
 
 ---

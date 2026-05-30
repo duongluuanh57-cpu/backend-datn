@@ -15,12 +15,6 @@ export async function aiRoutes(app: FastifyInstance) {
     schema: {
       body: AIPromptSchema,
     },
-    config: {
-      rateLimit: {
-        max: 5,
-        timeWindow: '1 minute'
-      }
-    },
     handler: AICoreController.generate,
   });
 

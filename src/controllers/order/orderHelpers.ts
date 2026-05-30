@@ -1,0 +1,94 @@
+import type { FastifyRequest, FastifyReply } from 'fastify';
+import mongoose from 'mongoose';
+import { ProductVariant } from '../../models/ProductVariant.ts';
+import { ProductTaxonomyTerm } from '../../models/ProductTaxonomyTerm.ts';
+import { Product } from '../../models/Product.ts';
+
+/**
+ * Require admin/subadmin role
+ */
+export function requireAdmin(req: FastifyRequest, reply: FastifyReply): boolean {
+  const user = (req as any).user;
+  if (!user || (user.role !== 'ADMIN' && user.role !== 'SUBADMIN')) {
+    reply.status(403).send({
+      success: false,
+      message: 'Bạn không có quyền thực hiện hành động này',
+    });
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Get tenant ID from request
+ */
+export function getTenantId(req: FastifyRequest): string {
+  return (req as any).user?.tenantId || 'default';
+}
+
+/**
+ * Enhance order items with product data (variants, taxonomy, rating, image)
+ */
+export async function enhanceItemsWithProductData(items: any[]): Promise<void> {
+  if (!items || items.length === 0) return;
+
+  const rawIds = items.map((i: any) => i.productId?.toString()).filter(Boolean);
+  const productIds = [...new Set(rawIds)].map((id) => new mongoose.Types.ObjectId(id as string));
+
+  if (productIds.length === 0) return;
+
+  const [variants, taxonomyLinks, productData] = await Promise.all([
+    ProductVariant.find({ productId: { $in: productIds } }).lean(),
+    ProductTaxonomyTerm.find({ productId: { $in: productIds } })
+      .populate({ path: 'termId', model: 'TaxonomyTerm', select: 'name slug' })
+      .populate({ path: 'taxonomyId', model: 'Taxonomy', select: 'slug name' })
+      .lean(),
+    Product.find(
+      { _id: { $in: productIds } },
+      { _id: 1, rating: 1, reviewsCount: 1, image: 1 }
+    ).lean(),
+  ]);
+
+  for (const item of items) {
+    const pid = item.productId?.toString();
+    item.variants = variants.filter((v: any) => v.productId?.toString() === pid);
+    item.taxonomy = taxonomyLinks
+      .filter((t: any) => t.productId?.toString() === pid)
+      .map((t: any) => ({
+        taxonomySlug: (t.taxonomyId as any)?.slug,
+        taxonomyName: (t.taxonomyId as any)?.name,
+        termName: (t.termId as any)?.name,
+        termSlug: (t.termId as any)?.slug,
+      }));
+    const prod = productData.find((p: any) => p._id.toString() === pid);
+    item.productRating = prod?.rating || 0;
+    item.productReviewsCount = prod?.reviewsCount || 0;
+    item.productImage = prod?.image || null;
+  }
+}
+
+/**
+ * Recalculate totalAmount from items
+ */
+export function recalculateTotalAmount(items: any[]): number {
+  return items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
+}
+
+/**
+ * Build date filter from query params
+ */
+export function buildDateFilter(startDate?: string, endDate?: string): Record<string, Date> | undefined {
+  if (!startDate && !endDate) return undefined;
+  const dateQuery: any = {};
+  if (startDate) {
+    const start = new Date(startDate);
+    start.setHours(0, 0, 0, 0);
+    dateQuery.$gte = start;
+  }
+  if (endDate) {
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+    dateQuery.$lte = end;
+  }
+  return dateQuery;
+}

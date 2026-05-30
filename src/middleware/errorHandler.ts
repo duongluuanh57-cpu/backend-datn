@@ -4,7 +4,9 @@ import * as Sentry from '@sentry/node';
 
 export function errorHandler(error: FastifyError, request: FastifyRequest, reply: FastifyReply) {
   // Bắn lỗi 500 (lỗi không lường trước) lên Sentry để theo dõi
-  if (!(error instanceof AppError) && !error.validation) {
+  // Skip rate-limit (429) vì không phải lỗi thật
+  const statusCode = (error as any).statusCode || 500;
+  if (!(error instanceof AppError) && !error.validation && statusCode !== 429) {
     Sentry.captureException(error);
   }
 
@@ -28,9 +30,11 @@ export function errorHandler(error: FastifyError, request: FastifyRequest, reply
     });
   }
 
-  // Các lỗi còn lại (Internal Server Error)
-  return reply.status(500).send({
+  // Các lỗi còn lại — giữ nguyên statusCode từ plugin (vd: 429 rate-limit)
+  return reply.status(statusCode).send({
     success: false,
-    message: 'Hệ thống gặp sự cố (Internal Server Error)',
+    message: statusCode === 429
+      ? 'Vượt quá giới hạn yêu cầu, vui lòng thử lại sau'
+      : 'Hệ thống gặp sự cố (Internal Server Error)',
   });
 }

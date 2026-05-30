@@ -42,8 +42,8 @@ export class UserRepository {
     if (search) {
       const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       query.$or = [
-        { username: { $regex: escaped, $options: 'i' } },
-        { email: { $regex: escaped, $options: 'i' } },
+        { username: { $regex: '^' + escaped, $options: 'i' } },
+        { email: { $regex: '^' + escaped, $options: 'i' } },
       ];
     }
 

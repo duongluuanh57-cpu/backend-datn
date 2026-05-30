@@ -11,7 +11,7 @@ HTTP Request
 ┌─────────────────────────────────────────────────────────────┐
 │  Fastify App (app.ts)                                       │
 │  • CORS, Helmet, Compress                                   │
-│  • Rate Limiter (Dynamic: Guest 100, User 500, Admin ∞)    │
+│  • Rate Limiter (Dynamic: Guest 60, User 300, Admin 5000)  │
 │  • Zod Validator + Serializer Compiler                      │
 │  • Raw Body (QStash/Stripe webhook)                         │
 │  • Core Plugin (DI: Redis, Auth, AI, QStash, PostHog)      │
@@ -127,53 +127,98 @@ Backend-api/
     │   ├── errorHandler.ts       # Global error handler (4 layers)
     │   └── qstashMiddleware.ts   # Upstash QStash signature verify
     │
-    ├── controllers/              # 19 HTTP controllers
-    │   ├── AuthController.ts      # register, login, refresh, logout
+    ├── controllers/              # 21 HTTP controllers (barrel files)
+    │   ├── AuthController.ts      # Barrel → auth/
     │   ├── TwoFactorController.ts # 2FA setup, enable, verify
     │   ├── OAuthController.ts    # Google OAuth flow
     │   ├── UserController.ts     # User CRUD (admin)
-    │   ├── UserAddressController.ts # CRUD addresses
-    │   ├── ProductController.ts  # Product CRUD + collections
+    │   ├── UserAddressController.ts # Barrel → userAddress/
+    │   ├── ProductController.ts  # Barrel → product/
     │   ├── ProductImageController.ts # Image CRUD per product
     │   ├── BrandController.ts    # Brand CRUD + origins
     │   ├── TagController.ts      # Tag CRUD
     │   ├── TaxonomyController.ts # Taxonomy CRUD (unified)
-    │   ├── TaxonomyTermController.ts # Term CRUD (nested)
-    │   ├── OrderController.ts    # Order read (my-orders)
+    │   ├── TaxonomyTermController.ts # Barrel → taxonomy/
+    │   ├── OrderController.ts    # Barrel → order/
     │   ├── HomepageConfigController.ts # Config CRUD
     │   ├── MediaController.ts    # Upload (R2/ImgBB/URL)
     │   ├── JobController.ts      # QStash job handlers
     │   ├── AICoreController.ts   # generate, runAgent
-    │   ├── AIChatController.ts   # chatStream, supportChat, feedback
-    │   ├── AICatalogController.ts # generateProduct, generateBrand, autocomplete, suggestPrice
-    │   └── AIVisionController.ts # scanGalleryImage
+    │   ├── AIChatController.ts   # Barrel → aiChat/
+    │   ├── AICatalogController.ts # Barrel → aiCatalog/
+    │   ├── AIVisionController.ts # scanGalleryImage
+    │   ├── PaymentController.ts  # Payment CRUD + lifecycle
+    │   ├── VoucherController.ts  # Voucher CRUD + validate code
+    │   │
+    │   ├── auth/                  # Auth sub-controllers
+    │   │   ├── authSessionController.ts   # register, login, refresh, logout
+    │   │   └── authProfileController.ts   # changePassword, updateProfile, getMe
+    │   ├── aiChat/                # AI Chat sub-controllers
+    │   │   ├── aiChatController.ts        # chatStream, supportChat, adminChat
+    │   │   ├── aiChatFeedbackController.ts # feedback
+    │   │   └── aiChatSupportController.ts # supportChat
+    │   ├── aiCatalog/             # AI Catalog sub-controllers
+    │   │   ├── aiCatalogGenerateController.ts # generateProduct, generateBrand
+    │   │   ├── aiCatalogAutocompleteController.ts # autocomplete
+    │   │   └── aiCatalogPriceController.ts # suggestPrice
+    │   ├── order/                 # Order sub-controllers
+    │   │   ├── orderQueryController.ts    # getMyOrders, getOrderById, getAllOrdersForAdmin
+    │   │   └── orderMutationController.ts # createOrder, updateOrderStatus, cancelOrder
+    │   ├── product/               # Product sub-controllers
+    │   │   ├── productListingController.ts  # getNewProducts, getLimitedProducts, getTrendingProducts, getSaleProducts, getAllProducts, getProductById
+    │   │   └── productMutationController.ts # createProduct, updateProduct, deleteProduct, bulkDeleteProducts
+    │   ├── taxonomy/              # Taxonomy sub-controllers
+    │   │   ├── taxonomyController.ts      # Taxonomy CRUD
+    │   │   └── taxonomyTermController.ts  # Term CRUD (nested)
+    │   └── userAddress/           # UserAddress sub-controllers
+    │       └── userAddressController.ts   # CRUD addresses + setDefault
     │
-    ├── services/                 # 23 business logic services
-    │   ├── AuthService.ts        # JWT, bcrypt, audit log, PostHog
-    │   ├── OAuthService.ts       # Google OAuth logic
-    │   ├── TwoFactorService.ts   # TOTP (speakeasy)
-    │   ├── EmailService.ts       # SMTP (Nodemailer + Gmail)
-    │   ├── ProductService.ts     # CRUD + relations (variants, images, tags, taxonomy, SEO)
+    ├── services/                  # 29 business logic services (barrel files)
+    │   ├── AdminToolService.ts    # Barrel → adminTool/
+    │   ├── AIService.ts           # Barrel → ai/
+    │   ├── ProductService.ts      # Barrel → product/
+    │   ├── AuthService.ts         # JWT, bcrypt, audit log, PostHog
+    │   ├── OAuthService.ts        # Google OAuth logic
+    │   ├── TwoFactorService.ts    # TOTP (speakeasy)
+    │   ├── EmailService.ts        # SMTP (Nodemailer + Gmail)
     │   ├── ProductImageService.ts # Image operations
-    │   ├── ImageService.ts       # Sharp optimize + R2 upload/delete
-    │   ├── BrandService.ts       # Brand CRUD
-    │   ├── TagService.ts         # Tag CRUD
-    │   ├── TaxonomyService.ts    # Taxonomy CRUD (v1)
+    │   ├── ImageService.ts        # Sharp optimize + R2 upload/delete
+    │   ├── BrandService.ts        # Brand CRUD
+    │   ├── TagService.ts          # Tag CRUD
+    │   ├── TaxonomyService.ts     # Taxonomy CRUD (v1)
     │   ├── TaxonomyTermService.ts # TaxonomyTerm CRUD (v2)
-    │   ├── SearchService.ts      # Hybrid search (keyword + semantic)
-    │   ├── AIService.ts          # Gemini AI (cascade fallback + retry)
-    │   ├── AgentService.ts       # LangGraph multi-agent (Research → Write → Review)
-    │   ├── RedisService.ts       # Permanent AI cache service
-    │   ├── QStashService.ts      # Upstash QStash publish + schedule
-    │   ├── HealthCheckService.ts # DB + Redis ping checks
-    │   ├── StatsService.ts       # Dashboard stats (revenue, orders, visits)
-    │   ├── SupportService.ts     # Chat orchestration (RAG + Agent + Eval)
-    │   ├── EvalService.ts        # LLM-as-a-Judge (faithfulness scoring)
-    │   ├── FailoverService.ts    # Multi-region failover monitor
-    │   ├── SelfHealingService.ts # Auto-recover DB/Redis
-    │   └── PostHogService.ts     # Analytics events + feature flags
+    │   ├── SearchService.ts       # Hybrid search (MongoDB aggregate pipeline)
+    │   ├── AgentService.ts        # LangGraph multi-agent (Research → Write → Review)
+    │   ├── RedisService.ts        # Permanent AI cache service
+    │   ├── QStashService.ts       # Upstash QStash publish + schedule
+    │   ├── HealthCheckService.ts  # DB + Redis ping checks
+    │   ├── StatsService.ts        # Dashboard stats (revenue, orders, visits)
+    │   ├── SupportService.ts      # Chat orchestration (RAG + Agent + Eval)
+    │   ├── EvalService.ts         # LLM-as-a-Judge (faithfulness scoring)
+    │   ├── FailoverService.ts     # Multi-region failover monitor
+    │   ├── SelfHealingService.ts  # Auto-recover DB/Redis
+    │   ├── PostHogService.ts      # Analytics events + feature flags
+    │   ├── PaymentService.ts      # Payment CRUD + lifecycle
+    │   ├── VoucherService.ts      # Voucher CRUD + validate + increment usage
+    │   ├── DocsService.ts         # Fetch GitHub docs cho Admin AI context
+    │   ├── BatchBufferService.ts  # Batch gom nhiều chat request vào 1 lần gọi Gemini
+    │   └── ConcurrencyLimiter.ts  # Giới hạn 10 Gemini call đồng thời, queue 200
+    │   │
+    │   ├── adminTool/             # AdminTool sub-services
+    │   │   ├── adminToolDeclarations.ts # getDeclarations, getUserDeclarations
+    │   │   └── adminToolExecutor.ts     # AdminToolExecutor (execute, listOrders, getOrderDetail)
+    │   ├── ai/                    # AI sub-services
+    │   │   ├── aiChatService.ts          # chat, stream
+    │   │   ├── aiEmbeddingService.ts     # generateEmbedding, similaritySearch
+    │   │   ├── aiProductService.ts       # generateProduct, generateBrand
+    │   │   ├── aiCatalogService.ts       # autocomplete, suggestPrice, classify
+    │   │   └── aiImageService.ts         # scanGalleryImage, identifyProduct
+    │   └── product/               # Product sub-services
+    │       ├── productQueryService.ts    # getNewProducts, getLimitedProducts, getTrendingProducts, getSaleProducts, getAllProducts, getProductById
+    │       ├── productMutationService.ts # createProduct, updateProduct, deleteProduct, bulkDeleteProducts
+    │       └── productCacheService.ts    # cache product data
     │
-    ├── models/                   # 18 Mongoose models
+    ├── models/                   # 24 Mongoose models
     │   ├── User.ts               # users
     │   ├── UserAddress.ts        # user_addresses
     │   ├── Brand.ts              # brands
@@ -195,27 +240,32 @@ Backend-api/
     │   ├── HomepageConfig.ts     # homepage_configs
     │   ├── Content.ts            # contents
     │   ├── Knowledge.ts          # knowledge
-    │   └── AuditLog.ts           # audit_logs
+    │   ├── AuditLog.ts           # audit_logs
+    │   ├── Payment.ts            # payments
+    │   └── Voucher.ts            # vouchers
     │
-    ├── routes/                   # 16 route files
+    ├── routes/                   # 20 route files
     │   ├── auth.routes.ts        # POST register, login, refresh, logout...
     │   ├── twoFactor.routes.ts   # POST setup, enable, verify
     │   ├── oauth.routes.ts       # GET google, google/callback
     │   ├── user.routes.ts        # GET, PATCH, DELETE users (admin)
     │   ├── user-address.routes.ts # CRUD addresses
     │   ├── product.routes.ts     # CRUD + collections (new, limited, trending, sale)
-    │   ├── productImageRoutes.ts # Image CRUD per product
     │   ├── brand.routes.ts       # CRUD + origins
     │   ├── tag.routes.ts         # CRUD
     │   ├── taxonomy.routes.ts    # CRUD v1 (unified)
     │   ├── taxonomy-v2.routes.ts # CRUD v2 (Taxonomy + Terms)
     │   ├── segment.routes.ts     # Legacy alias → taxonomy
-    │   ├── order.routes.ts       # GET my-orders, :id
+    │   ├── order.routes.ts       # GET my-orders, :id, /admin/*
     │   ├── homepage.routes.ts    # GET, PUT config
     │   ├── media.routes.ts       # POST upload-r2, upload-imgbb, upload-url
     │   ├── ai.routes.ts          # POST generate, chat, agent, support, feedback...
     │   ├── stats.routes.ts       # GET dashboard, POST track-visit
-    │   └── job.routes.ts         # POST welcome-email, daily-cleanup (QStash)
+    │   ├── voucher.routes.ts     # GET, POST, PATCH, DELETE vouchers
+    │   ├── payment.routes.ts     # GET, POST, PATCH payments
+    │   ├── category.routes.ts    # GET homepage categories
+    │   ├── job.routes.ts         # POST welcome-email, daily-cleanup, self-heal, failover-check
+    │   └── productImageRoutes.ts # Image CRUD per product
     │
     ├── types/                    # TypeScript type definitions
     │   ├── user.types.ts         # Zod schemas: Register, Login, ChangePassword
@@ -249,7 +299,7 @@ Backend-api/
 4. Helmet security headers
 5. Compress (gzip/brotli negotiation)
 6. Rate Limiter (check Redis counters)
-   └─ Guest: 100 req/min | User: 500 req/min | Admin: 10000 req/min
+   └─ Guest: 60 req/min | User: 300 req/min | Admin: 5000 req/min
 7. Route matching (prefix-based: /api/auth, /api/products, ...)
 8. Middleware (nếu route có preHandler):
    ├─ authMiddleware: parse JWT, set req.user
@@ -376,7 +426,8 @@ Custom error classes trong `src/utils/errors.ts`:
 |-----|----------|---------|-------------|
 | Welcome email | `POST /api/jobs/welcome-email` | On register | Gửi email chào mừng |
 | Daily cleanup | `POST /api/jobs/daily-cleanup` | Cron daily | Dọn dẹp sessions, tokens |
-| Self-healing | `POST /api/jobs/self-heal` | Cron hourly | Kiểm tra Redis/DB health |
+| Self-healing | `POST /api/jobs/self-heal` | Cron hourly | Kiểm tra Redis/DB health, clear AI cache |
+| Failover check | `POST /api/jobs/failover-check` | Cron 5 min | Kiểm tra region health, trigger failover nếu cần |
 
 Jobs được xác thực bởi `qstashMiddleware` (Upstash signature verification + idempotency check).
 

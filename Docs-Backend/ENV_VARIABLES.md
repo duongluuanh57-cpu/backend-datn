@@ -24,7 +24,8 @@ REDIS_URL=redis://default:<pass>@<host>:<port>
 ```
 
 **MONGO_URI** — MongoDB Atlas connection string. Dùng `MONGO_URI` (không phải `MONGODB_URI`).
-**REDIS_URL** — Redis connection (Upstash, Render, or local).
+  - MongoDB pool: `maxPoolSize: 50`, `minPoolSize: 5`, `serverSelectionTimeoutMS: 15000`, `socketTimeoutMS: 45000`
+**REDIS_URL** — Redis connection (Upstash, Render, or local). Rate limiting dùng Redis Upstash (HTTP-based, không TCP persistent).
 
 ### AI & Machine Learning
 ```bash
@@ -105,6 +106,20 @@ POSTHOG_HOST=https://us.i.posthog.com
 
 **Sentry**: [sentry.io](https://sentry.io/) — Error tracking (chỉ active ở production)
 **PostHog**: [posthog.com](https://posthog.com/) — Product analytics
+
+### GitHub Docs (DocsService)
+```bash
+GITHUB_REPO_OWNER=your-org
+GITHUB_REPO_NAME=backend-datn
+GITHUB_BRANCH=main
+GITHUB_TOKEN=ghp_...                 # Optional: tăng rate limit khi fetch raw content
+FRONTEND_GITHUB_REPO_OWNER=your-org
+FRONTEND_GITHUB_REPO_NAME=frontend-datn
+FRONTEND_GITHUB_BRANCH=main
+```
+
+Dùng để DocsService fetch nội dung .md từ GitHub raw content, cung cấp context cho Admin AI.
+Cache 5 phút qua Redis + in-memory.
 
 ### Failover (Optional)
 ```bash

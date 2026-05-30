@@ -2,7 +2,7 @@
 
 ## Tổng quan
 
-Hệ thống AI được xây dựng với **Google Gemini 3.1 Flash-Lite** làm core model, kết hợp **LangGraph** cho multi-agent workflows, **Gemini Embedding 2** cho semantic search, và **LLM-as-a-Judge** cho quality evaluation.
+Hệ thống AI được xây dựng với **Google Gemini** làm core model (cascade 3 model khác nhau), kết hợp **LangGraph** cho multi-agent workflows, **Gemini Embedding 2** cho semantic search, và **LLM-as-a-Judge** cho quality evaluation. Chat với users dùng **BatchBuffer** để gom nhiều request vào 1 lần gọi Gemini.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -10,9 +10,9 @@ Hệ thống AI được xây dựng với **Google Gemini 3.1 Flash-Lite** làm
 ├──────────────────────────────────────────────────────────────┤
 │                                                              │
 │  ┌──────────┐   ┌──────────┐   ┌────────────┐              │
-│  │  Gemini  │   │ LangGraph│   │  Hybrid    │              │
-│  │ 3.1 Flash│   │  Agent   │   │  Search    │              │
-│  │  + Vision│   │ Workflow │   │(Key+Vector)│              │
+│  │  Gemini   │   │ LangGraph│   │  Hybrid    │              │
+│  │ Cascade   │   │  Agent   │   │  Search    │              │
+│  │3 Models   │   │ Workflow │   │(Key+Vector)│              │
 │  └────┬─────┘   └────┬─────┘   └─────┬──────┘              │
 │       │              │               │                      │
 │       ▼              ▼               ▼                      │
@@ -26,11 +26,21 @@ Hệ thống AI được xây dựng với **Google Gemini 3.1 Flash-Lite** làm
 │  └──────────────────────────────────────────┘               │
 │                                                              │
 │  ┌──────────────────────────────────────────┐               │
+│  │       Infrastructure Services             │               │
+│  │  ┌──────────┐ ┌──────────────┐          │               │
+│  │  │BatchBufr │ │Concurrency   │          │               │
+│  │  │150ms/15  │ │Limiter 10/200│          │               │
+│  │  │batch +   │ │Gemini slot   │          │               │
+│  │  │cache     │ │guard         │          │               │
+│  │  └──────────┘ └──────────────┘          │               │
+│  └──────────────────────────────────────────┘               │
+│                                                              │
+│  ┌──────────────────────────────────────────┐               │
 │  │          Support Services                 │               │
 │  │  ┌──────────┐ ┌──────────┐ ┌──────────┐  │               │
-│  │  │EvalService│ │RedisSrvc│ │ImageSrvc │  │               │
-│  │  │LLM-as-a- │ │ AI Cache│ │Sharp+ R2│  │               │
-│  │  │  Judge   │ │permanent│ │optimize  │  │               │
+│  │  │EvalService│ │RedisSrvc│ │AdminTool │  │               │
+│  │  │LLM-as-a- │ │ AI Cache│ │Fn Calling│  │               │
+│  │  │  Judge   │ │permanent│ │for Admin │  │               │
 │  │  └──────────┘ └──────────┘ └──────────┘  │               │
 │  └──────────────────────────────────────────┘               │
 └──────────────────────────────────────────────────────────────┘
@@ -38,30 +48,47 @@ Hệ thống AI được xây dựng với **Google Gemini 3.1 Flash-Lite** làm
 
 ---
 
+## Rate Limiting
+
+| Role | Limit | Time Window |
+|------|-------|-------------|
+| Guest | 60 | 1 minute |
+| USER | 300 | 1 minute |
+| SUBADMIN | 2000 | 1 minute |
+| ADMIN | 5000 | 1 minute |
+
+---
+
 ## 1. Core AI Service (`AIService.ts`)
 
-### Cascade Fallback Pattern
+### Cascade Fallback Pattern — 3 Model Khác Nhau
 
-AI Service triển khai **cascade fallback với retry** để đảm bảo độ tin cậy:
+Khác với tài liệu cũ (3 model giống nhau), cascade hiện tại dùng **3 model khác nhau** để tăng resilience:
+
+| Model | Vai trò | Ghi chú |
+|-------|---------|---------|
+| `gemini-3.1-flash-lite` | Primary | Model nhanh nhất, mới nhất |
+| `gemini-2.0-flash-lite` | Fallback 1 | Nhẹ hơn, vẫn đủ nhanh |
+| `gemini-1.5-flash-lite` | Fallback 2 | Fallback cuối, model cũ |
 
 ```
 User Request
     │
     ▼
 ┌─────────────────────────────────────────────┐
-│  Attempt 1: Model 1 (gemini-3.1-flash-lite) │──→ Success → Return
+│  Attempt 1: gemini-3.1-flash-lite (Primary) │──→ Success → Return
 │                    Lỗi?                      │
 └─────────────────────┬───────────────────────┘
                       │ Lỗi (503/429/timeout)
                       ▼
 ┌─────────────────────────────────────────────┐
-│  Attempt 2: Model 2 (gemini-3.1-flash-lite) │──→ Success → Return
+│  Attempt 2: gemini-2.0-flash-lite           │──→ Success → Return
 │                    Lỗi?                      │
 └─────────────────────┬───────────────────────┘
                       │ Lỗi
                       ▼
 ┌─────────────────────────────────────────────┐
-│  Attempt 3: Model 3 (gemini-3.1-flash-lite) │──→ Success → Return
+│  Attempt 3: gemini-1.5-flash-lite           │──→ Success → Return
 │                    Lỗi?                      │
 └─────────────────────┬───────────────────────┘
                       │ Hết 3 models
@@ -75,25 +102,107 @@ User Request
 ```
 
 **Key features:**
+- **Concurrency Limiter**: Mọi Gemini call đều qua `geminiLimiter.acquire()` — tối đa 10 call đồng thời
 - **Exponential backoff**: Tăng dần thời gian chờ giữa các retry attempts
 - **Error handling**: Xử lý HTTP 503 (Service Unavailable) và 429 (Rate Limited)
-- **Safety settings**: `BLOCK_NONE` — không chặn nội dung (cần cho phân tích sản phẩm)
-- **3 model names đồng nhất**: `'gemini-3.1-flash-lite'` cho cả primary, fallback 1, fallback 2 (dự phòng cho model overload)
+- **Safety settings**: `BLOCK_NONE` — không chặn nội dung
 
 ### Methods
 
 | Method | Type | Description |
 |--------|------|-------------|
-| `identifyProduct(imageBuffer)` | Vision | Phân tích ảnh sản phẩm, trả về features |
-| `createChatStream(messages, req, clientInfo)` | Streaming | Chat với streaming response |
-| `generateResponse(prompt, role, modelName?)` | Non-streaming | Text generation |
-| `generateEmbedding(text)` | Embedding | Vector embedding (3072 dims) |
+| `identifyProduct(imageBuffer, prompt)` | Vision | Phân tích ảnh sản phẩm, cascade fallback |
+| `createChatStream(messages, systemPrompt, image)` | Streaming | Chat streaming (dùng cho admin chat, feedback, vision fallback) |
+| `createBatchChatStream(items[])` | Batch | Gọi Gemini 1 lần cho nhiều câu hỏi, parse JSON response |
+| `generateResponse(prompt, userId?, modelName?)` | Non-streaming | Text generation, cascade fallback |
+| `generateEmbedding(text)` | Embedding | Vector embedding (768 dims). Fallback: SHA-256 hash → deterministic unit vector |
+| `healthCheck()` | Health | Test AI service availability |
 
 ---
 
-## 2. LangGraph Multi-Agent (`AgentService.ts`)
+## 2. BatchBufferService (`BatchBufferService.ts`)
 
-Triển khai **StateGraph** với 3 agents nối tiếp:
+**Cơ chế batch** để tối ưu throughput cho chat endpoint.
+
+### Flow
+
+```
+User A ──┐
+User B ──┤
+User C ──┤  ┌────────────────────────────────────────────┐
+User D ──┤  │           BatchBuffer (150ms window)        │
+User E ──┼──┤  queue.push()                                │
+User F ──┤  │  • 150ms timeout flush                       │
+User G ──┤  │  • 15 users → force flush                    │
+User H ──┤  │  • 2s max wait                               │
+         │  │  • Cache check trước: Redis + Knowledge DB   │
+         │  └─────────────────────┬─────────────────────────┘
+                                 │ flush()
+                                 ▼
+         ┌────────────────────────────────────────────────┐
+         │  AIService.createBatchChatStream(items[])       │
+         │  • Build 1 batch prompt với N câu hỏi          │
+         │  • Gọi Gemini 1 lần                            │
+         │  • Parse JSON response { shortId: answer }     │
+         │  • Cache vào Redis + Knowledge DB              │
+         └─────────────────────┬──────────────────────────┘
+                              │
+         ┌────────────────────┼────────────────────┐
+         ▼                    ▼                    ▼
+      User A ✓            User B ✓             User C ✓
+      (resolve)            (resolve)            (resolve)
+```
+
+### Config
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `BATCH_WINDOW_MS` | 150ms | Chờ tối đa 150ms trước khi flush |
+| `MAX_BATCH_SIZE` | 15 | Force flush khi đủ 15 users |
+| `MAX_WAIT_MS` | 2000ms | Flush bắt buộc sau 2s |
+| `RETRY_COUNT` | 1 | Retry 1 lần nếu Gemini fail |
+
+### Cache Strategy
+- **Redis cache**: Key `ai:chat:{tenantId}:{base64(question)}` — permanent
+- **Knowledge DB**: Lưu question → answer vào MongoDB cho RAG
+- **Cache check trước batch**: Kiểm tra Redis trước, chỉ gửi câu chưa có cache lên Gemini
+
+### Retry Logic
+- Retry 1 lần toàn bộ batch nếu Gemini fail
+- Nếu vẫn fail → reject tất cả entries với `'AI temporarily unavailable'`
+
+---
+
+## 3. ConcurrencyLimiter (`ConcurrencyLimiter.ts`)
+
+Bảo vệ Gemini API khỏi quá tải khi có nhiều request cùng lúc.
+
+### Config
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `maxConcurrent` | 10 | Tối đa 10 Gemini call đồng thời |
+| `maxQueueSize` | 200 | Queue tối đa 200 request đang chờ |
+
+### Priority Queue
+- `acquire(priority)` — Priority mặc định 0
+- Request đầu tiên trong cascade (attempt 1) được ưu tiên hơn (priority=1)
+- Queue tự động sort: priority cao → timestamp thấp (FCFS nếu cùng priority)
+
+### Usage
+```typescript
+const release = await geminiLimiter.acquire(1);
+try {
+  const result = await model.generateContent(prompt);
+  return result;
+} finally {
+  release();
+}
+```
+
+---
+
+## 4. LangGraph Multi-Agent (`AgentService.ts`)
+
+Triển khai **StateGraph** với 3 agents nối tiếp (giữ nguyên):
 
 ```
 START
@@ -101,21 +210,18 @@ START
   ▼
 ┌─────────────────────────────────────────────┐
 │  Agent 1: RESEARCHER                         │
-│  "Bạn là người nghiên cứu thông thái..."     │
 │  → Tóm tắt chủ đề bằng ngôn ngữ bình dân     │
 └───────────────────┬─────────────────────────┘
                     │ research output
                     ▼
 ┌─────────────────────────────────────────────┐
 │  Agent 2: WRITER                             │
-│  "Bạn là người kể chuyện tài ba..."          │
 │  → Viết bài dựa trên research, tối giản      │
 └───────────────────┬─────────────────────────┘
                     │ final_output (draft)
                     ▼
 ┌─────────────────────────────────────────────┐
 │  Agent 3: REVIEWER                           │
-│  "Bạn là biên tập viên..."                   │
 │  → Kiểm duyệt, loại bỏ từ phức tạp          │
 └───────────────────┬─────────────────────────┘
                     │ reviewed output
@@ -124,13 +230,12 @@ START
 ```
 
 **Caching**: Toàn bộ workflow được cache trong Redis 24h (SHA256 hash của task).
-**Model**: Cả 3 agents đều dùng Gemini 3.1 Flash-Lite.
 
 ---
 
-## 3. Hybrid Search (`SearchService.ts`)
+## 5. Hybrid Search (`SearchService.ts`)
 
-Kết hợp **keyword matching** và **semantic search**:
+Kết hợp **keyword matching** qua MongoDB **aggregation pipeline** (thay vì load toàn bộ products vào RAM như trước).
 
 ```
 User Query: "nước hoa nam hương gỗ"
@@ -138,72 +243,68 @@ User Query: "nước hoa nam hương gỗ"
     ▼
 ┌─────────────────────────────────────────────┐
 │  1. Greeting Detection                       │
-│  ├─ "chào", "hello", "xin chào"...          │
+│  ├─ 16 patterns: chào, hello, cảm ơn, bye...│
 │  └─ → mode: 'greeting' (skip search)        │
 └───────────────────┬─────────────────────────┘
                     │ Not greeting
                     ▼
 ┌─────────────────────────────────────────────┐
-│  2. Keyword Search                           │
-│  ├─ Filter products by name matching        │
-│  ├─ Filter by brand name                    │
-│  └─ Filter by keywords (tags)               │
+│  2. MongoDB Aggregate Pipeline               │
+│  ├─ $lookup brands → brandData              │
+│  ├─ $match: $regex trên name + brandData    │
+│  ├─ $limit: limit+4 (pre-filter)            │
+│  ├─ $sort: soldCount DESC, rating DESC      │
+│  └─ $limit: limit (final)                   │
 └───────────────────┬─────────────────────────┘
-                    │
+                    │ products[]
                     ▼
 ┌─────────────────────────────────────────────┐
-│  3. Mode Classification                      │
+│  3. Post-filter (belt-and-suspenders)        │
+│  ├─ Lọc lại name/brand check trong memory   │
 │  ├─ 'specific': có kết quả chính xác        │
-│  ├─ 'general': có kết quả gần đúng          │
-│  └─ 'greeting': chào hỏi, không search      │
+│  └─ 'general': không có kết quả             │
 └───────────────────┬─────────────────────────┘
-                    │ { products, mode, brands }
+                    │ { products, mode }
                     ▼
              Return to Controller
 ```
 
-**Debug**: Ghi log vào `search_debug.log` để phân tích quality.
+**Thay đổi quan trọng**: Không còn dùng `Product.find({}).toArray()` + filter trong memory. Dùng `mongoose.connection.db.collection('products').aggregate([...])` — MongoDB làm việc filter, sort, limit, join brands. An toàn cho database lớn.
 
 ---
 
-## 4. RAG Pipeline (Retrieval-Augmented Generation)
+## 6. RAG Pipeline (Retrieval-Augmented Generation) — Chat (BATCH)
+
+Chat với users đã chuyển từ **streaming real-time** sang **batch + JSON response**:
 
 ```
-User Question
+User sends /api/ai/chat → { messages, image? }
     │
     ▼
-┌─────────────────────────────────────────────┐
-│  1. Context Building                         │
-│  ├─ Global DB info: brands, tags,           │
-│  │   scent groups, concentrations, segments  │
-│  ├─ Product search results                   │
-│  └─ Knowledge base chunks                    │
-└───────────────────┬─────────────────────────┘
-                    │ context
-                    ▼
-┌─────────────────────────────────────────────┐
-│  2. System Prompt Generation                 │
-│  ├─ Role: "Chuyên gia tư vấn nước hoa..."   │
-│  ├─ Context: products + DB info             │
-│  ├─ Adaptive directive (từ rating history)  │
-│  └─ Constraints: JSON response, tone, etc.  │
-└───────────────────┬─────────────────────────┘
-                    │ system prompt + user query
-                    ▼
-┌─────────────────────────────────────────────┐
-│  3. Gemini AI Call                           │
-│  ├─ Cascade fallback (3 models × 3 retries) │
-│  ├─ Safety: BLOCK_NONE                      │
-│  └─ Format: streaming text                   │
-└───────────────────┬─────────────────────────┘
-                    │ response
-                    ▼
-┌─────────────────────────────────────────────┐
-│  4. Post-processing                          │
-│  ├─ Lưu vào Redis cache (permanent)         │
-│  ├─ Lưu vào Knowledge DB                     │
-│  └─ Stream về client (Vercel AI SDK)         │
-└─────────────────────────────────────────────┘
+AIChatController.chatStream()
+    │
+    ├─ 1. Image check → image? → fallback direct stream (skip batch)
+    │
+    ├─ 2. Adaptive Learning (từ rating lịch sử)
+    │      └─ avgRating / consecutiveLow → adaptiveDirective
+    │
+    ├─ 3. Hybrid Search (SearchService)
+    │      ├─ products[], mode, context
+    │      └─ storeOverview (brands, tags, scent groups...)
+    │
+    ├─ 4. Push vào BatchBuffer
+    │      ├─ question, cacheKey, context
+    │      └─ → Promise (resolve/reject)
+    │
+    └─ 5. BatchBuffer flush → Gemini (1 call N questions)
+           ├─ Cache hit? → resolve ngay
+           ├─ Gemini success → parse JSON, resolve từng entry
+           └─ Gemini fail → retry 1 lần, reject nếu vẫn fail
+```
+
+**Response format** (không còn streaming):
+```json
+{ "response": "Câu trả lời từ AI..." }
 ```
 
 ### Adaptive Learning (trong `AIChatController`)
@@ -212,52 +313,70 @@ Hệ thống tự điều chỉnh dựa trên rating lịch sử:
 
 ```
 5 ratings gần nhất:
-  - 4.5★ trở lên → Giữ nguyên system prompt
-  - 3-4★ → Thêm directive "chi tiết hơn về mùi hương"
-  - Dưới 3★ → Switch sang "ngôn ngữ đơn giản, tập trung vào cảm xúc"
-
-Consecutive low ratings (3 lần ≤ 2★):
-  → Thêm "XIN LỖI, hãy hỏi lại câu hỏi cụ thể hơn"
+  - avgRating >= 4.0 → "Duy trì phong cách hiện tại"
+  - avgRating < 4.0 → "Thêm chi tiết cụ thể, cá nhân hóa"
+  - avgRating < 3.0 → "Hỏi làm rõ nhu cầu, đề xuất tối đa 2 sản phẩm"
+  - consecutiveLow >= 2 → "Hỏi lại nhu cầu, xin lỗi"
 ```
 
 ---
 
-## 5. Support Chat Orchestration (`SupportService.ts`)
+## 7. Admin Chat — Function Calling (`AIChatController.adminChat`)
 
-Kết hợp RAG + Multi-agent + Eval trong 1 flow:
+Admin chat **giữ nguyên streaming** + function calling, không qua batch:
 
 ```
-User Question
+Admin sends /api/ai/admin/chat → { message, history }
     │
     ▼
-┌─────────────────────────────────────────────┐
-│  1. Hybrid Search (SearchService)            │
-│  → { products, context }                     │
-└───────────────────┬─────────────────────────┘
-                    │
-                    ▼
-┌─────────────────────────────────────────────┐
-│  2. LangGraph Workflow (AgentService)        │
-│  → Research → Write → Review                │
-│  → Response text                            │
-└───────────────────┬─────────────────────────┘
-                    │
-                    ▼
-┌─────────────────────────────────────────────┐
-│  3. Eval (EvalService — LLM-as-a-Judge)     │
-│  → Score 1-5, reason                        │
-│  → isReliable: score >= 4                   │
-└───────────────────┬─────────────────────────┘
-                    │
-                    ▼
-             Return { response, metadata }
+AIChatController.adminChat()
+    │
+    ├─ 1. DocsService — Fetch GitHub docs (cached 5 phút)
+    │      → system prompt với context codebase
+    │
+    ├─ 2. Gemini call (non-streaming) — function detection
+    │      ├─ Tool declarations từ AdminToolService.getDeclarations()
+    │      └─ AI decides if it needs DB data
+    │
+    ├─ 3. Nếu có function call → AdminToolService.execute()
+    │      ├─ get_dashboard_stats, list_orders
+    │      ├─ list_products, list_brands, list_users
+    │      ├─ list_vouchers, list_tags, list_taxonomies
+    │      └─ search_products, get_store_overview (user-facing)
+    │
+    └─ 4. Gemini call (streaming) — final response
+           → Stream text về client
+```
+
+**DocsService** cung cấp context từ GitHub với topic-based selection:
+- Luôn gửi 5 docs mặc định (PROJECT_STRUCTURE, TECH_STACK, API_REFERENCE...)
+- Keyword matching để thêm docs liên quan (ví dụ: "order" → thêm DATABASE_SCHEMA)
+- Cache 5 phút qua Redis + in-memory
+
+---
+
+## 8. Chat Feedback (`AIChatController.handleFeedback`)
+
+```
+User sends /api/ai/feedback → { rating: 1-5 }
+    │
+    ▼
+AIChatController.handleFeedback()
+    │
+    ├─ Rating 5: "Vui mừng, cảm ơn, hỏi giúp thêm"
+    ├─ Rating 4: "Cảm ơn, thừa nhận cần cải thiện"
+    ├─ Rating 3: "Hỏi điều chỉnh thêm"
+    ├─ Rating 2: "Xin lỗi, đề nghị mô tả lại"
+    └─ Rating 1: "Xin lỗi sâu sắc, đề nghị liên hệ hỗ trợ"
+    │
+    └─ → Stream phản hồi về client (không batch, real-time)
 ```
 
 ---
 
-## 6. LLM-as-a-Judge (`EvalService.ts`)
+## 9. LLM-as-a-Judge (`EvalService.ts`)
 
-Đánh giá chất lượng phản hồi AI dựa trên **Faithfulness**:
+Đánh giá chất lượng phản hồi AI dựa trên **Faithfulness** (giữ nguyên):
 
 ```
 Prompt template:
@@ -272,18 +391,16 @@ Prompt template:
 
 - **Score 5**: Hoàn hảo — trả lời chính xác dựa trên context
 - **Score 1**: Hallucination — trả lời không dựa trên context
-- Dùng Gemini 3.1 Flash-Lite làm Judge model
 
 ---
 
-## 7. Auto-Ingestion (Product `post('save')` hook)
+## 10. Auto-Ingestion (Product `post('save')` hook)
 
 ```typescript
 ProductSchema.post('save', async function() {
   // Tự động tạo embedding khi lưu sản phẩm
   const text = `${this.name} ${brandName} ${this.description}`;
   const vector = await AIService.generateEmbedding(text);
-  
   // Lưu vào ProductSEO
   await ProductSEO.findOneAndUpdate(
     { productId: this._id },
@@ -293,42 +410,43 @@ ProductSchema.post('save', async function() {
 });
 ```
 
-Mỗi khi Product được tạo/cập nhật, hệ thống tự động:
-1. Populate brand name
-2. Tạo vector embedding (3072 dimensions)
-3. Lưu vào ProductSEO collection
+---
+
+## 11. AI Endpoints
+
+| Endpoint | Controller | Response Type | Batch? | Description |
+|----------|------------|---------------|--------|-------------|
+| `POST /api/ai/generate` | AICoreController | JSON | ❌ | Non-streaming text generation |
+| `POST /api/ai/chat` | AIChatController | JSON | ✅ BatchBuffer | Chat với users (có ảnh fallback stream) |
+| `POST /api/ai/admin/chat` | AIChatController | Streaming | ❌ | Admin chat + function calling |
+| `POST /api/ai/support/chat` | AIChatController | JSON | ✅ BatchBuffer | Alias chatStream |
+| `POST /api/ai/feedback` | AIChatController | Streaming | ❌ | Rating-based adaptive response |
+| `POST /api/ai/agent/run` | AICoreController | JSON | ❌ | LangGraph workflow |
+| `POST /api/ai/generate-product` | AICatalogController | JSON | ❌ | Auto product description |
+| `POST /api/ai/generate-brand` | AICatalogController | JSON | ❌ | Auto brand story |
+| `POST /api/ai/autocomplete` | AICatalogController | JSON | ❌ | Real-time suggestions (has cache) |
+| `POST /api/ai/suggest-price` | AICatalogController | JSON | ❌ | Market price suggestions |
+| `POST /api/ai/scan-gallery-image` | AIVisionController | JSON | ❌ | Image analysis + bilingual captions |
+| `GET /api/ai/health` | AICoreController | JSON | ❌ | AI health check |
 
 ---
 
-## 8. AI Endpoints
-
-| Endpoint | Controller | Description |
-|----------|------------|-------------|
-| `POST /api/ai/generate` | AICoreController | Non-streaming text generation |
-| `POST /api/ai/chat` | AIChatController | Streaming chat + RAG + adaptive |
-| `POST /api/ai/support/chat` | AIChatController | Multi-agent + Eval |
-| `POST /api/ai/feedback` | AIChatController | Rating-based adaptive response |
-| `POST /api/ai/agent/run` | AICoreController | LangGraph workflow |
-| `POST /api/ai/generate-product` | AICatalogController | Auto product description |
-| `POST /api/ai/generate-brand` | AICatalogController | Auto brand story |
-| `POST /api/ai/autocomplete` | AICatalogController | Real-time suggestions |
-| `POST /api/ai/suggest-price` | AICatalogController | Market price suggestions |
-| `POST /api/ai/scan-gallery-image` | AIVisionController | Image analysis + bilingual captions |
-
----
-
-## 9. AI Caching Strategy
+## 12. AI Caching Strategy
 
 | Cache | Key Pattern | TTL | Purpose |
 |-------|-------------|-----|---------|
-| Chat responses | `chat_cache:{base64(query)}` | Vĩnh viễn | Không gọi AI cho câu hỏi trùng |
+| Chat responses | `ai:chat:{tenantId}:{base64(query)}` | Vĩnh viễn | BatchBuffer cache trước khi gọi Gemini |
+| Chat cache (old) | `chat_cache:{sha256(query)}` | Vĩnh viễn | Legacy (RedisService) |
 | Agent workflows | `agent_workflow_cache:{sha256(task)}` | 24h | Cache toàn bộ LangGraph flow |
+| AI autocomplete | `ai_autocomplete_cache:{field}:{base64(val)}` | 7 days | Gợi ý autocomplete |
+| AI price cache | `ai_price_cache:{base64(name)}:{markup}:{size}` | 7 days | Giá gợi ý |
 | AI embeddings | `embedding:{sha256(text)}` | - | Trong ProductSEO (DB) |
+| GitHub docs | `github:doc:{owner}/{repo}/{branch}/{path}` | 5 phút | DocsService cache |
 | Health checks | - | - | No cache (real-time) |
 
 ---
 
-## 10. Environment Variables cho AI
+## 13. Environment Variables cho AI
 
 ```bash
 # Bắt buộc

@@ -55,6 +55,10 @@ const OrderSchema = new Schema<IOrder>(
   }
 );
 
+OrderSchema.index({ tenantId: 1, customerName: 1 });
+OrderSchema.index({ tenantId: 1, customerEmail: 1 });
+OrderSchema.index({ tenantId: 1, customerPhone: 1 });
+
 OrderSchema.plugin(multiTenancyPlugin);
 
 export const Order =

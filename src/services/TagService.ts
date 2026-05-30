@@ -63,7 +63,7 @@ export class TagService {
   ): Promise<{ items: ITag[]; total: number; page: number; totalPages: number }> {
     const query: Record<string, any> = { tenantId };
     if (search) {
-      query.name = { $regex: search, $options: 'i' };
+      query.name = { $regex: '^' + search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
     }
     const skip = (page - 1) * limit;
     const [items, total] = await Promise.all([

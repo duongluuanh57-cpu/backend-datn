@@ -280,6 +280,102 @@ GET /api/products/sale                 # Sale/discounted products
 }
 ```
 
+### Public Products (filtered sections)
+```http
+GET /api/products/public?type=trending&brand=BrandA&sortBy=price-asc&limit=10
+```
+
+Thay thế các endpoint `/new`, `/limited`, `/trending`, `/sale` cũ. Cho phép client gộp filter/server-side sort trong **một request duy nhất**.
+
+**Query params:**
+
+| Param | Type | Mô tả |
+|-------|------|-------|
+| `type` | `trending \| new \| limited` | Lọc theo section. `trending` = sort viewCount desc; `new` = sort createdAt desc; `limited` = sort price desc |
+| `brand` | string | Lọc theo brand name |
+| `capacity` | string | Lọc theo dung tích (VD: `50ml`) |
+| `priceRange` | string | Format `min-max` (VD: `500000-2000000`) |
+| `scentGroup` | string | Lọc theo scent group slug |
+| `concentration` | string | Lọc theo concentration slug |
+| `segment` | string | Lọc theo segment slug |
+| `sortBy` | `price-asc \| price-desc \| name-asc \| name-desc` | Sắp xếp kết quả |
+| `limit` | number | Số lượng trả về (mặc định 20) |
+
+**Ghi chú:**
+- Cache key = MD5 của toàn bộ filter params — mỗi tổ hợp filter có cache riêng
+- Filter/sort thực hiện **server-side** sau `formatMultipleProducts`
+- Không dùng aggregation — dùng Node.js filter vì capacity/scent/concentration/segment cần parse từ dữ liệu đã format
+- Không hỗ trợ phân trang (giới hạn cứng bởi `limit`)
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [{
+    "_id": "...", "name": "...", "brand": "Chanel",
+    "price": 1500000, "viewCount": 250,
+    "images": [...], "variants": [...], "tags": [...], "taxonomyTerms": [...]
+  }]
+}
+```
+
+### Bulk Fetch Products
+```http
+GET /api/products/bulk?ids=id1,id2,id3
+```
+
+Fetch nhiều sản phẩm cùng lúc theo danh sách ObjectId. Dùng cho AI Chat để tránh N+1 request.
+
+**Query params:**
+
+| Param | Type | Mô tả |
+|-------|------|-------|
+| `ids` | string | Comma-separated ObjectId, tối đa **20 IDs** |
+
+**Ghi chú:**
+- ObjectId không hợp lệ bị lọc bỏ tự động
+- Kết quả trả về theo thứ tự xuất hiện trong DB (không theo thứ tự IDs gửi lên)
+- Dùng `$in` query + `formatMultipleProducts`
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [{ "_id": "...", "name": "...", "brand": "...", "price": 1500000, "images": [...], "variants": [...], "tags": [...], "taxonomyTerms": [...] }]
+}
+```
+
+### Suggest Products (autocomplete)
+```http
+GET /api/products/suggest?q=perf&limit=5
+```
+
+Endpoint nhẹ cho autocomplete search. Chỉ trả về các field cần thiết: `_id`, `name`, `price`, `image`, `brandId(name)`.
+
+**Query params:**
+
+| Param | Type | Mô tả |
+|-------|------|-------|
+| `q` | string | Query string — prefix regex match trên `name` (case-insensitive) |
+| `limit` | number | Số lượng gợi ý tối đa (mặc định 5) |
+
+**Ghi chú:**
+- Index hỗ trợ: `{ tenantId: 1, name: 1 }`
+- Tránh `formatMultipleProducts` — select trực tiếp field cần
+- Ký tự đặc biệt trong query được escape trước khi regex
+- Cache TTL: **300 giây**
+- AI fallback xử lý ở frontend (gọi `POST /api/ai/autocomplete` khi không có kết quả)
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    { "_id": "...", "name": "Perfume Chanel", "price": 1500000, "image": "https://...", "brandId": { "_id": "...", "name": "Chanel" } }
+  ]
+}
+```
+
 ### Get Product by ID
 ```http
 GET /api/products/:id
@@ -504,6 +600,45 @@ Response: 200 { "success": true, "data": [...], "pagination": {...} }
 GET /api/orders/:id
 ```
 
+### Admin — List All Orders
+```http
+GET /api/orders/admin/orders
+Authorization: Bearer <token> (ADMIN/SUBADMIN)
+
+Query params: page, limit, status, paymentStatus, search, startDate, endDate
+Response: 200 { "success": true, "data": { "orders": [...], "pagination": {...} } }
+```
+
+### Admin — Get Order by ID
+```http
+GET /api/orders/admin/:id
+Authorization: Bearer <token> (ADMIN/SUBADMIN)
+```
+
+### Admin — Update Order Status
+```http
+PATCH /api/orders/admin/:id/status
+Authorization: Bearer <token> (ADMIN/SUBADMIN)
+Content-Type: application/json
+
+{ "status": "processing" }  # pending | processing | shipped | delivered | cancelled
+```
+
+### Admin — Update Payment Status
+```http
+PATCH /api/orders/admin/:id/payment-status
+Authorization: Bearer <token> (ADMIN/SUBADMIN)
+Content-Type: application/json
+
+{ "paymentStatus": "paid" }  # unpaid | paid | refunded
+```
+
+### Admin — Delete Order
+```http
+DELETE /api/orders/admin/:id
+Authorization: Bearer <token> (ADMIN/SUBADMIN)
+```
+
 ---
 
 ## Homepage Config
@@ -554,120 +689,130 @@ Response: 200 { "success": true, "data": { "url": "...", "originalBytes": 123, "
 
 ---
 
+## Vouchers
+
+### List Vouchers
+```http
+GET /api/vouchers
+Authorization: Bearer <token>
+```
+- Admin/Subadmin: Lấy tất cả vouchers
+- USER: Chỉ lấy voucher đang active, còn hạn
+
+### Get Voucher by ID
+```http
+GET /api/vouchers/:id
+Authorization: Bearer <token>
+```
+
+### Validate Voucher Code
+```http
+POST /api/vouchers/validate
+Content-Type: application/json
+
+{ "code": "SALE50", "orderAmount": 1000000 }
+
+Response: 200 { "success": true, "valid": true, "message": "...", "voucher": {...}, "discountAmount": 500000 }
+```
+
+### Create Voucher (Admin/Subadmin)
+```http
+POST /api/vouchers
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "code": "SALE50",
+  "type": "percentage",      # "percentage" | "fixed"
+  "value": 10,               # 10 = 10%, hoặc 50000 = 50.000đ
+  "minOrderAmount": 500000,
+  "maxDiscount": 200000,
+  "maxUsage": 100,
+  "startDate": "2026-01-01",
+  "endDate": "2026-12-31"
+}
+```
+
+### Update Voucher (Admin/Subadmin)
+```http
+PATCH /api/vouchers/:id
+Authorization: Bearer <token>
+```
+
+### Delete Voucher (Admin/Subadmin)
+```http
+DELETE /api/vouchers/:id
+Authorization: Bearer <token>
+```
+
+---
+
+## Payments
+
+All endpoints require `Authorization: Bearer <token>` with `ADMIN` or `SUBADMIN` role.
+
+### List Payments
+```http
+GET /api/payments
+Authorization: Bearer <token>
+Response: { "success": true, "data": [{ "orderId": {...}, "method": "bank_transfer", "amount": 1500000, "status": "paid", ... }] }
+```
+
+### Get Payment by ID
+```http
+GET /api/payments/:id
+Authorization: Bearer <token>
+```
+
+### Get Payments by Order
+```http
+GET /api/payments/order/:orderId
+Authorization: Bearer <token>
+```
+
+### Create Payment
+```http
+POST /api/payments
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "orderId": "...",
+  "method": "bank_transfer",   # "cod" | "bank_transfer" | "credit_card" | "momo" | "zalopay"
+  "amount": 1500000
+}
+```
+
+### Mark Paid (Admin/Subadmin)
+```http
+PATCH /api/payments/:id/paid
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "transactionCode": "GD123456" }
+```
+
+### Mark Failed (Admin/Subadmin)
+```http
+PATCH /api/payments/:id/failed
+Authorization: Bearer <token>
+```
+
+### Mark Refunded (Admin/Subadmin)
+```http
+PATCH /api/payments/:id/refunded
+Authorization: Bearer <token>
+```
+
+### Delete Payment (Admin/Subadmin)
+```http
+DELETE /api/payments/:id
+Authorization: Bearer <token>
+```
+
+---
+
 ## AI
-
-### Generate Text
-```http
-POST /api/ai/generate
-Content-Type: application/json
-
-{ "prompt": "Viết mô tả cho nước hoa hương hoa cỏ" }
-
-Response: 200 { "success": true, "data": "Mô tả chi tiết..." }
-```
-**Rate limit:** 5 req/min
-
-### Chat (Streaming)
-```http
-POST /api/ai/chat
-Content-Type: application/json
-
-{
-  "messages": [{ "role": "user", "content": "Gợi ý nước hoa nam" }],
-  "productImage"?: "base64...",    # Optional: analyze product image
-  "clientId"?: "client-123"        # Optional: for adaptive learning
-}
-```
-**Response:** Server-Sent Events (streaming text via Vercel AI SDK)
-- Hỗ trợ adaptive learning (dựa trên rating lịch sử)
-- Hỗ trợ vision (nhận diện ảnh sản phẩm)
-
-### Support Chat (Multi-agent + Eval)
-```http
-POST /api/ai/support/chat
-Content-Type: application/json
-
-{ "prompt": "Tôi muốn tìm nước hoa tặng bạn gái" }
-
-Response: 200 { "response": "...", "metadata": { "evalScore": 5, "isReliable": true } }
-```
-
-### Feedback
-```http
-POST /api/ai/feedback
-Content-Type: application/json
-
-{
-  "messages": [{ "role": "user", "content": "..." }],
-  "rating": 5,
-  "clientId": "client-123",
-  "productImage"?: "base64..."
-}
-```
-**Response:** Streaming — AI tự điều chỉnh theo rating.
-
-### Run Agent
-```http
-POST /api/ai/agent/run
-Content-Type: application/json
-
-{ "prompt": "Giải thích các tầng hương nước hoa" }
-
-Response: 200 { "success": true, "data": "..." }
-```
-
-### Generate Product Description
-```http
-POST /api/ai/generate-product
-Content-Type: application/json
-
-{ "name": "Rose Oud" }
-
-Response: 200 { "success": true, "data": { "description": "...", "keywords": [...], "metaTitle": "..." } }
-```
-
-### Generate Brand Story
-```http
-POST /api/ai/generate-brand
-Content-Type: application/json
-
-{ "name": "Chanel" }
-
-Response: 200 { "success": true, "data": { "description": "...", "story": "..." } }
-```
-
-### Autocomplete
-```http
-POST /api/ai/autocomplete
-Content-Type: application/json
-
-{ "input": "nước hoa" }
-
-Response: Streaming suggestions
-```
-
-### Suggest Price
-```http
-POST /api/ai/suggest-price
-Content-Type: application/json
-
-{ "productInfo": { ... } }
-
-Response: Market price suggestions
-```
-
-### Scan Gallery Image (Vision)
-```http
-POST /api/ai/scan-gallery-image
-Content-Type: application/json
-
-{
-  "imageUrl": "https://...",
-  "language": "vi"     # "vi" | "en"
-}
-
-Response: { "title": "...", "quote": "..." }  # Bilingual captions
-```
 
 ---
 

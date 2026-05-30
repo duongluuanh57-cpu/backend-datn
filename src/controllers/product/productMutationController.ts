@@ -1,0 +1,89 @@
+import type { FastifyRequest, FastifyReply } from 'fastify';
+import { ProductService } from '../../services/ProductService.ts';
+
+export class ProductMutationController {
+  /**
+   * PATCH /api/products/:id
+   */
+  static async updateProduct(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { id } = req.params as { id: string };
+      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const productData = req.body as any;
+
+      const product = await ProductService.updateProduct(id, productData, tenantId);
+      if (!product) return reply.status(404).send({ success: false, message: 'Không tìm thấy sản phẩm để cập nhật' });
+
+      return reply.status(200).send({ success: true, data: product });
+    } catch (error: any) {
+      const isValidationError = error.message?.includes('không tồn tại') ||
+                                error.message?.includes('bắt buộc') ||
+                                error.name === 'ValidationError';
+      return reply.status(isValidationError ? 400 : 500).send({ success: false, message: error.message });
+    }
+  }
+
+  /**
+   * DELETE /api/products/:id
+   */
+  static async deleteProduct(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { id } = req.params as { id: string };
+      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+
+      const success = await ProductService.deleteProduct(id, tenantId);
+      if (!success) return reply.status(404).send({ success: false, message: 'Không tìm thấy sản phẩm để xóa' });
+      return reply.status(200).send({ success: true, message: 'Đã xóa sản phẩm thành công' });
+    } catch (error: any) {
+      return reply.status(500).send({ success: false, message: error.message });
+    }
+  }
+
+  /**
+   * POST /api/products/bulk-delete
+   */
+  static async bulkDeleteProducts(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { ids } = req.body as { ids: string[] };
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return reply.status(400).send({ success: false, message: 'Danh sách ID không hợp lệ' });
+      }
+
+      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+
+      const success = await ProductService.bulkDeleteProducts(ids, tenantId);
+      if (!success) return reply.status(404).send({ success: false, message: 'Không thể xóa các sản phẩm' });
+
+      return reply.status(200).send({ success: true, message: `Đã xóa thành công ${ids.length} sản phẩm` });
+    } catch (error: any) {
+      return reply.status(500).send({ success: false, message: error.message });
+    }
+  }
+
+  /**
+   * POST /api/products
+   */
+  static async createProduct(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const productData = req.body as any;
+
+      const product = await ProductService.createProduct(productData, tenantId);
+
+      return reply.status(201).send({
+        success: true,
+        data: product,
+      });
+    } catch (error: any) {
+      console.error('❌ [createProduct] Error:', error.name, error.message);
+      // Lỗi validation (brand/taxonomy không tồn tại) → 400
+      const isValidationError = error.message?.includes('không tồn tại') ||
+                                error.message?.includes('bắt buộc') ||
+                                error.name === 'ValidationError';
+      return reply.status(isValidationError ? 400 : 500).send({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+}

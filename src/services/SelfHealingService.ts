@@ -1,54 +1,74 @@
-import { redis } from '../config/redis.ts';
+import { redis, isRedisAvailable } from '../config/redis.ts';
 import mongoose from 'mongoose';
 import { PostHogService } from './PostHogService.ts';
 
-/**
- * SelfHealingService — Hệ thống tự phục hồi hạ tầng (Skill 10)
- * Tự động phát hiện và xử lý các sự cố phổ biến của DB/Redis.
- */
 export class SelfHealingService {
-  /**
-   * Kiểm tra và dọn dẹp Redis nếu bộ nhớ quá tải
-   */
+  private static REDIS_MEMORY_THRESHOLD_PERCENT = 0.8;
+
   static async checkRedisHealth() {
+    if (!isRedisAvailable()) {
+      console.warn('⚠️ [SelfHeal] Redis not available, skipping memory check');
+      return;
+    }
+
     try {
       const info = await redis.info('memory');
-      // Ví dụ: Parse bộ nhớ và nếu > 80% thì clear cache AI
-      if (info.includes('used_memory_human:1G')) { // Giả lập ngưỡng 1GB
-        console.warn('⚠️ Redis Memory High! Đang dọn dẹp AI Cache...');
-        const keys = await redis.keys('ai_cache:*');
-        if (keys.length > 0) await redis.del(...keys);
-        
+      const usedMatch = info.match(/used_memory:(\d+)/);
+      const maxMatch = info.match(/maxmemory:(\d+)/);
+      const used = usedMatch ? parseInt(usedMatch[1], 10) : 0;
+      const max = maxMatch ? parseInt(maxMatch[1], 10) : 0;
+
+      if (max > 0 && used / max > this.REDIS_MEMORY_THRESHOLD_PERCENT) {
+        const percent = ((used / max) * 100).toFixed(1);
+        console.warn(`⚠️ [SelfHeal] Redis memory at ${percent}% — clearing AI cache`);
+
+        let deleted = 0;
+        let cursor = '0';
+        do {
+          const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', 'ai_cache:*', 'COUNT', 100);
+          if (keys.length > 0) {
+            await redis.del(...keys);
+            deleted += keys.length;
+          }
+          cursor = nextCursor;
+        } while (cursor !== '0');
+
+        console.log(`✅ [SelfHeal] Cleared ${deleted} AI cache keys`);
         PostHogService.capture('system', 'self_healing_action', {
           action: 'redis_cache_clear',
-          reason: 'memory_high'
+          reason: 'memory_high',
+          usagePercent: percent,
+          deletedKeys: deleted,
         });
       }
     } catch (err) {
-      console.error('Self-healing Redis failed', err);
+      console.error('❌ [SelfHeal] Redis check failed:', err);
     }
   }
 
-  /**
-   * Kiểm tra kết nối DB và tái kết nối nếu cần
-   */
   static async checkDatabaseConnection() {
     if (mongoose.connection.readyState !== 1) {
-      console.warn('⚠️ Database disconnected! Đang thử kết nối lại...');
+      console.warn('⚠️ [SelfHeal] Database disconnected — attempting reconnect...');
       try {
         await mongoose.connect(process.env.MONGO_URI || '');
+        console.log('✅ [SelfHeal] Database reconnected successfully');
       } catch (err) {
-        console.error('Tái kết nối thất bại', err);
+        console.error('❌ [SelfHeal] Reconnect failed:', err);
       }
     }
   }
 
-  /**
-   * Chạy quy trình tổng quát (Có thể gọi từ QStash hàng giờ)
-   */
+  static clearAICache(): void {
+    PostHogService.capture('system', 'self_healing_action', {
+      action: 'ai_cache_clear_manual',
+      reason: 'manual_trigger',
+    });
+  }
+
   static async performMaintenance() {
-    console.log('🛠️ Đang chạy quy trình Self-Healing định kỳ...');
+    console.log('🛠️ [SelfHeal] Running scheduled maintenance...');
     await this.checkRedisHealth();
     await this.checkDatabaseConnection();
+    console.log('✅ [SelfHeal] Maintenance complete');
   }
 }

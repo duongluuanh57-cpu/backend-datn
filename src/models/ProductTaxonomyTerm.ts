@@ -45,7 +45,7 @@ const ProductTaxonomyTermSchema = new Schema<IProductTaxonomyTerm>(
 );
 
 // Một sản phẩm không thể gán cùng một term hai lần
-ProductTaxonomyTermSchema.index({ tenantId: 1, productId: 1, termId: 1 }, { unique: true });
+ProductTaxonomyTermSchema.index({ tenantId: 1, productId: 1, taxonomyId: 1, termId: 1 }, { unique: true });
 
 // Index để query nhanh: "Lấy tất cả sản phẩm thuộc taxonomy X"
 ProductTaxonomyTermSchema.index({ tenantId: 1, taxonomyId: 1, productId: 1 });

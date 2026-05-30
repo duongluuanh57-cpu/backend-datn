@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { HomepageConfig } from '../models/HomepageConfig.ts';
+import { redis } from '../config/redis.ts';
 
 export class HomepageConfigController {
   static async getConfig(req: FastifyRequest, reply: FastifyReply) {
@@ -49,13 +50,21 @@ export class HomepageConfigController {
         'bannerTitleVi', 'bannerSubtitleVi', 'bannerLabelVi',
         'bannerTitleEn', 'bannerSubtitleEn', 'bannerLabelEn',
         'galleryVi', 'galleryEn', 'productCardConfig', 'blogCardConfig',
-        'productSessionLayout'
+        'productSessionLayout', 'navbar', 'footer'
       ];
       const $set: Record<string, any> = {};
       for (const key of fields) {
         if (body[key] !== undefined) {
           $set[key] = JSON.parse(JSON.stringify(body[key]));
         }
+      }
+
+      // Clear Redis cache for public products when session layout changes
+      if (body.productSessionLayout) {
+        try {
+          const keys = await redis.keys(`products:public:*:${tenantId}:*`);
+          if (keys.length > 0) await redis.del(...keys);
+        } catch (_) {}
       }
 
       const writeResult = await col.updateOne(

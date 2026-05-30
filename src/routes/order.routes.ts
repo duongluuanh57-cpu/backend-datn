@@ -1,10 +1,19 @@
 import type { FastifyInstance } from 'fastify';
 import { OrderController } from '../controllers/OrderController.ts';
-import { authMiddleware } from '../middleware/authMiddleware.ts';
+import { authMiddleware, requireRole } from '../middleware/authMiddleware.ts';
+
+async function adminOrderRoutes(app: FastifyInstance) {
+  app.addHook('preHandler', authMiddleware);
+  app.addHook('preHandler', requireRole('ADMIN', 'SUBADMIN'));
+
+  app.get('/orders', OrderController.getAllOrdersForAdmin);
+  app.get('/:id', OrderController.getOrderByIdForAdmin);
+  app.patch('/:id/status', OrderController.updateOrderStatus);
+  app.patch('/:id/payment-status', OrderController.updatePaymentStatus);
+  app.delete('/:id', OrderController.deleteOrder);
+}
 
 export async function orderRoutes(app: FastifyInstance) {
-  app.addHook('preHandler', authMiddleware);
-
   // Test endpoint
   app.get('/test-simple', async (req, reply) => {
     return reply.status(200).send({
@@ -15,27 +24,9 @@ export async function orderRoutes(app: FastifyInstance) {
   });
 
   // User routes
-  app.get('/my-orders', OrderController.getMyOrders);
-  app.get('/:id', OrderController.getOrderById);
+  app.get('/my-orders', { preHandler: [authMiddleware] }, OrderController.getMyOrders);
+  app.get('/:id', { preHandler: [authMiddleware] }, OrderController.getOrderById);
 
-  // Admin routes
-  // Note: Must list specific routes before parameterized routes to avoid conflicts
-  app.get('/admin/orders', async (req, reply) => {
-    try {
-      const result = await OrderController.getAllOrdersForAdmin(req, reply);
-      return result;
-    } catch (error: any) {
-      console.error('[ERROR] Admin orders error:', error);
-      return reply.status(500).send({
-        success: false,
-        message: 'Error fetching orders',
-        error: error.message
-      });
-    }
-  });
-
-  app.get('/admin/:id', OrderController.getOrderByIdForAdmin);
-  app.patch('/admin/:id/status', OrderController.updateOrderStatus);
-  app.patch('/admin/:id/payment-status', OrderController.updatePaymentStatus);
-  app.delete('/admin/:id', OrderController.deleteOrder);
+  // Admin routes — registered under /admin prefix (no conflict with /:id)
+  await app.register(adminOrderRoutes, { prefix: '/admin' });
 }

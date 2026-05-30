@@ -12,7 +12,7 @@ export interface IProduct extends Document {
   image?: string; // URL ảnh chính (denormalized từ ProductImage)
   // tags đã được chuyển sang bảng trung gian ProductTag
   // scentGroups, concentrations, segments đã được chuyển sang bảng trung gian ProductTaxonomyTerm
-  gender?: string;
+  categories?: mongoose.Types.ObjectId[];
   rating?: number;
   reviewsCount?: number;
   quantityInStock: number; // Tổng số lượng tồn kho (tính từ variants)
@@ -35,7 +35,7 @@ const ProductSchema = new Schema<IProduct>(
     description: { type: String },
     image: { type: String },
     // tags đã được chuyển sang ProductTag (bảng trung gian)
-    gender: { type: String },
+    categories: [{ type: Schema.Types.ObjectId, ref: 'Category' }],
     rating: { type: Number, default: 5 },
     reviewsCount: { type: Number, default: 0 },
     quantityInStock: { type: Number, default: 0 },
@@ -60,11 +60,12 @@ ProductSchema.post('save', async function() {
   try {
     console.log(`🧠 [AI Auto-Train] Đang nạp kiến thức cho sản phẩm: ${this.name}`);
     
-    // Populate brand để lấy tên
-    await this.populate('brandId');
+    // Populate brand + categories để lấy tên
+    await this.populate(['brandId', 'categories']);
     const brandName = (this.brandId as any)?.name || '';
+    const categoryNames = (this.categories as any[] || []).map((c: any) => c?.name).filter(Boolean).join(' ');
     
-    const textToEmbed = `${this.name} ${brandName} ${this.description} ${this.gender || ''}`;
+    const textToEmbed = `${this.name} ${brandName} ${this.description} ${categoryNames}`;
     
     // Gọi AI Service để lấy "vân tay ý nghĩa"
     const vector = await AIService.generateEmbedding(textToEmbed);
@@ -101,6 +102,9 @@ ProductSchema.index({ tenantId: 1, brandId: 1 });
 ProductSchema.index({ tenantId: 1, quantityInStock: 1 });
 ProductSchema.index({ tenantId: 1, price: 1 });
 ProductSchema.index({ tenantId: 1, soldCount: -1, createdAt: -1 });
+
+// Text index for full-text search across name and description (used by getAllProducts)
+ProductSchema.index({ name: 'text', description: 'text' });
 
 ProductSchema.plugin(multiTenancyPlugin);
 

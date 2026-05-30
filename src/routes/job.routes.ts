@@ -14,4 +14,6 @@ export async function jobRoutes(app: FastifyInstance) {
 
   app.post('/welcome-email', { config: { rawBody: true } }, JobController.handleWelcomeEmail);
   app.post('/daily-cleanup', { config: { rawBody: true } }, JobController.handleDailyCleanup);
+  app.post('/self-heal', { config: { rawBody: true } }, JobController.handleSelfHeal);
+  app.post('/failover-check', { config: { rawBody: true } }, JobController.handleFailoverCheck);
 }

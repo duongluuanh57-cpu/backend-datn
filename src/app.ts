@@ -32,6 +32,8 @@ import './models/ProductTaxonomyTerm.ts';
 import './models/Payment.ts';
 import { userAddressRoutes } from './routes/user-address.routes.ts';
 import { homepageConfigRoutes } from './routes/homepage.routes.ts';
+import { categoryRoutes } from './routes/category.routes.ts';
+import { contentRoutes } from './routes/content.routes.ts';
 import rawBody from 'fastify-raw-body';
 import corePlugin from './plugins/core.ts';
 import { errorHandler } from './middleware/errorHandler.ts';
@@ -82,22 +84,20 @@ export function buildApp(): FastifyInstance {
 
   app.register(compress);
   
-  // TEMP: Disable rate limit for debugging
-  // Rate Limiting: Dynamic (GUEST: 100/min, USER: 500/min, ADMIN: Unlimit)
-  /*
+  // Rate Limiting — bảo vệ backend khỏi quá tải
   app.register(rateLimit, {
     max: (request: any) => {
       const user = (request as any).user;
-      if (user?.role === 'ADMIN') return 10000; // Thực tế là không giới hạn
-      if (user?.role === 'USER') return 500;
-      return 100; // Guest
+      if (user?.role === 'ADMIN') return 5000;
+      if (user?.role === 'SUBADMIN') return 2000;
+      if (user?.role === 'USER') return 300;
+      return 60; // Guest
     },
     timeWindow: '1 minute',
     keyGenerator: (request) => {
       return (request as any).user?._id?.toString() || request.ip;
     }
   });
-  */
 
   // Routes
   app.register(authRoutes, { prefix: '/api/auth' });
@@ -122,6 +122,8 @@ export function buildApp(): FastifyInstance {
   app.register(homepageConfigRoutes, { prefix: '/api/homepage-config' });
   app.register(voucherRoutes, { prefix: '/api/vouchers' });
   app.register(paymentRoutes, { prefix: '/api/payments' });
+  app.register(categoryRoutes, { prefix: '/api/categories' });
+  app.register(contentRoutes, { prefix: '/api/content' });
 
   // Global Error Handler
   app.setErrorHandler(errorHandler);

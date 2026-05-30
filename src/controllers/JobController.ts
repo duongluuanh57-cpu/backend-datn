@@ -1,5 +1,7 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { EmailService } from '../services/EmailService.ts';
+import { SelfHealingService } from '../services/SelfHealingService.ts';
+import { FailoverService } from '../services/FailoverService.ts';
 
 /**
  * JobController — Xử lý các tác vụ bất đồng bộ được gọi từ QStash
@@ -42,5 +44,39 @@ export class JobController {
     }
     
     return reply.send({ success: true, message: 'Cleanup completed' });
+  }
+
+  /**
+   * Self-healing định kỳ — kiểm tra Redis/DB health và phục hồi nếu cần
+   * POST /api/jobs/self-heal
+   */
+  static async handleSelfHeal(request: FastifyRequest, reply: FastifyReply) {
+    request.log.info('[Cron Job] Bắt đầu quy trình Self-Healing định kỳ...');
+
+    await SelfHealingService.performMaintenance();
+
+    const messageId = (request as any).qstashMessageId;
+    if (messageId) {
+      await request.server.redis.set(`qstash:processed:${messageId}`, '1', 'EX', 86400);
+    }
+
+    return reply.send({ success: true, message: 'Self-healing completed' });
+  }
+
+  /**
+   * Failover check — kiểm tra region health
+   * POST /api/jobs/failover-check
+   */
+  static async handleFailoverCheck(request: FastifyRequest, reply: FastifyReply) {
+    request.log.info('[Cron Job] Kiểm tra failover...');
+
+    const result = await FailoverService.monitorAndFailover();
+
+    const messageId = (request as any).qstashMessageId;
+    if (messageId) {
+      await request.server.redis.set(`qstash:processed:${messageId}`, '1', 'EX', 86400);
+    }
+
+    return reply.send({ success: true, data: result });
   }
 }

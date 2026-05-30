@@ -1,220 +1,29 @@
-import type { FastifyRequest, FastifyReply } from 'fastify';
-import { ProductService } from '../services/ProductService.ts';
+/**
+ * Barrel file — re-exports all product sub-controllers for backward compatibility.
+ * Import { ProductListingController } from './product/productListingController.ts'
+ * Import { ProductMutationController } from './product/productMutationController.ts'
+ */
+export { ProductListingController } from './product/productListingController.ts';
+export { ProductMutationController } from './product/productMutationController.ts';
+
+import { ProductListingController } from './product/productListingController.ts';
+import { ProductMutationController } from './product/productMutationController.ts';
 
 export class ProductController {
-  /**
-   * GET /api/products/new
-   */
-  static async getNewProducts(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      // Lấy tenantId từ token (nếu có) hoặc dùng mặc định cho demo
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
-      
-      const products = await ProductService.getNewProducts(tenantId);
-      
-      return reply.status(200).send({
-        success: true,
-        data: products,
-      });
-    } catch (error: any) {
-      return reply.status(500).send({
-        success: false,
-        message: error.message,
-      });
-    }
-  }
+  // Listing methods
+  static getNewProducts = ProductListingController.getNewProducts;
+  static getLimitedProducts = ProductListingController.getLimitedProducts;
+  static getTrendingProducts = ProductListingController.getTrendingProducts;
+  static getPublicProducts = ProductListingController.getPublicProducts;
+  static getSaleProducts = ProductListingController.getSaleProducts;
+  static getAllProducts = ProductListingController.getAllProducts;
+  static getBulkProducts = ProductListingController.getBulkProducts;
+  static suggestProducts = ProductListingController.suggestProducts;
+  static getProductById = ProductListingController.getProductById;
 
-  /**
-   * GET /api/products/limited
-   */
-  static async getLimitedProducts(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
-      const products = await ProductService.getLimitedProducts(tenantId);
-
-      return reply.status(200).send({
-        success: true,
-        data: products,
-      });
-    } catch (error: any) {
-      return reply.status(500).send({
-        success: false,
-        message: error.message,
-      });
-    }
-  }
-
-  /**
-   * GET /api/products/trending
-   */
-  static async getTrendingProducts(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
-      
-      const products = await ProductService.getTrendingProducts(tenantId);
-      
-      return reply.status(200).send({
-        success: true,
-        data: products,
-      });
-    } catch (error: any) {
-      return reply.status(500).send({
-        success: false,
-        message: error.message,
-      });
-    }
-  }
-
-  /**
-   * GET /api/products/sale
-   */
-  static async getSaleProducts(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
-      const products = await ProductService.getSaleProducts(tenantId);
-      
-      return reply.status(200).send({
-        success: true,
-        data: products,
-      });
-    } catch (error: any) {
-      return reply.status(500).send({
-        success: false,
-        message: error.message,
-      });
-    }
-  }
-
-  /**
-   * GET /api/products
-   * Query params: page, limit, search, brand, stock, tag, sortBy
-   */
-  static async getAllProducts(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
-      const query = req.query as {
-        page?: string;
-        limit?: string;
-        search?: string;
-        brand?: string;
-        stock?: string;
-        tag?: string;
-        sortBy?: string;
-      };
-
-      const result = await ProductService.getAllProducts(tenantId, {
-        page: query.page ? parseInt(query.page, 10) : 1,
-        limit: query.limit ? parseInt(query.limit, 10) : 25,
-        search: query.search,
-        brand: query.brand,
-        stock: query.stock,
-        tag: query.tag,
-        sortBy: query.sortBy,
-      });
-
-      return reply.status(200).send({ success: true, data: result });
-    } catch (error: any) {
-      return reply.status(500).send({ success: false, message: error.message });
-    }
-  }
-
-  /**
-   * GET /api/products/:id
-   */
-  static async getProductById(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const { id } = req.params as { id: string };
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
-      const product = await ProductService.getProductById(id, tenantId);
-      if (!product) return reply.status(404).send({ success: false, message: 'Không tìm thấy sản phẩm' });
-      return reply.status(200).send({ success: true, data: product });
-    } catch (error: any) {
-      return reply.status(500).send({ success: false, message: error.message });
-    }
-  }
-
-  /**
-   * PATCH /api/products/:id
-   */
-  static async updateProduct(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const { id } = req.params as { id: string };
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
-      const productData = req.body as any;
-      
-      const product = await ProductService.updateProduct(id, productData, tenantId);
-      if (!product) return reply.status(404).send({ success: false, message: 'Không tìm thấy sản phẩm để cập nhật' });
-      
-      return reply.status(200).send({ success: true, data: product });
-    } catch (error: any) {
-      const isValidationError = error.message?.includes('không tồn tại') ||
-                                error.message?.includes('bắt buộc') ||
-                                error.name === 'ValidationError';
-      return reply.status(isValidationError ? 400 : 500).send({ success: false, message: error.message });
-    }
-  }
-
-  /**
-   * DELETE /api/products/:id
-   */
-  static async deleteProduct(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const { id } = req.params as { id: string };
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
-      
-      const success = await ProductService.deleteProduct(id, tenantId);
-      if (!success) return reply.status(404).send({ success: false, message: 'Không tìm thấy sản phẩm để xóa' });
-      return reply.status(200).send({ success: true, message: 'Đã xóa sản phẩm thành công' });
-    } catch (error: any) {
-      return reply.status(500).send({ success: false, message: error.message });
-    }
-  }
-
-  /**
-   * POST /api/products/bulk-delete
-   */
-  static async bulkDeleteProducts(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const { ids } = req.body as { ids: string[] };
-      if (!ids || !Array.isArray(ids) || ids.length === 0) {
-        return reply.status(400).send({ success: false, message: 'Danh sách ID không hợp lệ' });
-      }
-      
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
-      
-      const success = await ProductService.bulkDeleteProducts(ids, tenantId);
-      if (!success) return reply.status(404).send({ success: false, message: 'Không thể xóa các sản phẩm' });
-      
-      return reply.status(200).send({ success: true, message: `Đã xóa thành công ${ids.length} sản phẩm` });
-    } catch (error: any) {
-      return reply.status(500).send({ success: false, message: error.message });
-    }
-  }
-
-  /**
-   * POST /api/products
-   */
-  static async createProduct(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
-      const productData = req.body as any;
-      
-      const product = await ProductService.createProduct(productData, tenantId);
-      
-      return reply.status(201).send({
-        success: true,
-        data: product,
-      });
-    } catch (error: any) {
-      console.error('❌ [createProduct] Error:', error.name, error.message);
-      // Lỗi validation (brand/taxonomy không tồn tại) → 400
-      const isValidationError = error.message?.includes('không tồn tại') || 
-                                error.message?.includes('bắt buộc') ||
-                                error.name === 'ValidationError';
-      return reply.status(isValidationError ? 400 : 500).send({
-        success: false,
-        message: error.message,
-      });
-    }
-  }
+  // Mutation methods
+  static updateProduct = ProductMutationController.updateProduct;
+  static deleteProduct = ProductMutationController.deleteProduct;
+  static bulkDeleteProducts = ProductMutationController.bulkDeleteProducts;
+  static createProduct = ProductMutationController.createProduct;
 }

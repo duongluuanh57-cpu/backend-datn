@@ -1,88 +1,88 @@
 import mongoose from 'mongoose';
-import fs from 'fs';
-import path from 'path';
+import { VectorSearchService } from './VectorSearchService.ts';
+
+async function runKeywordSearch(query: string, tenantId: string, limit: number) {
+  const queryWords = query.toLowerCase().trim().split(/\s+/).filter(w => w.length >= 2);
+  if (queryWords.length === 0) return [];
+
+  const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const nameConditions = queryWords.map(word => ({
+    name: { $regex: '^' + escapeRegex(word), $options: 'i' },
+  }));
+  const brandPattern = queryWords.map(w => '^' + escapeRegex(w)).join('|');
+
+  const BUFFER = 2;
+  return mongoose.connection.db!.collection('products').aggregate([
+    { $match: { tenantId, $or: nameConditions } },
+    { $sort: { soldCount: -1, rating: -1 } },
+    { $limit: limit * BUFFER },
+    { $lookup: { from: 'brands', localField: 'brandId', foreignField: '_id', as: 'brandData' } },
+    { $unwind: { path: '$brandData', preserveNullAndEmptyArrays: true } },
+    { $match: { $or: [...nameConditions, { 'brandData.name': { $regex: brandPattern, $options: 'i' } }] } },
+    { $limit: limit },
+    { $project: { _id: 1, name: 1, price: 1, description: 1, brand: '$brandData.name', brandId: 1, images: 1, variants: 1, rating: 1, soldCount: 1 } },
+  ]).toArray();
+}
 
 export class SearchService {
-  /**
-   * Hybrid Search - Sửa lỗi Keywords là mảng
-   */
   static async hybridSearch(query: string, tenantId: string, limit: number = 4) {
-    const logPath = path.join(process.cwd(), 'search_debug.log');
-    const timestamp = new Date().toISOString();
-    
     try {
-      const db = mongoose.connection.db;
-      if (!db) return { products: [], docs: [], mode: 'specific', brands: [] };
-
       const cleanQuery = query.toLowerCase().trim();
-      fs.appendFileSync(logPath, `[${timestamp}] 🔍 Search Query: "${cleanQuery}"\n`);
+      if (!cleanQuery) return { products: [], mode: 'general' };
 
-      // Phát hiện greeting (chào hỏi) - KHÔNG đề xuất sản phẩm
+      const confusionPatterns = [
+        /^ủa+$/i, /^hả+$/i, /^gì(\s+vậy)?$/i,
+        /^sao(\s+cơ)?$/i, /^ý(\s+là)?(\s+sao)?/i,
+        /^cái(\s+gì)?$/i, /^đâu(\s+có)?/i,
+        /^tại(\s+sao)?$/i, /^là(\s+sao)?$/i,
+        /^ơ(\s+kìa)?/i, /^a(\s+là)?/i,
+      ];
+
+      if (confusionPatterns.some(p => p.test(cleanQuery))) {
+        return { products: [], mode: 'confusion' };
+      }
+
       const greetingPatterns = [
-        /^(xin )?chào/i,
-        /^hi+$/i,
-        /^hello+$/i,
-        /^hey+$/i,
+        /^(xin )?chào/i, /^hi+$/i, /^hello+$/i, /^hey+$/i,
         /^good (morning|afternoon|evening)/i,
         /^(chúc )?buổi (sáng|chiều|tối)/i,
         /^(bạn|mình) (có )?khỏe/i,
         /^(có ai|ai đó) (ở đây|không)/i,
         /^(cảm ơn|thanks|thank you)/i,
-        /^tạm biệt|bye|goodbye/i
+        /^tạm biệt|bye|goodbye/i,
       ];
 
-      const isGreeting = greetingPatterns.some(pattern => pattern.test(cleanQuery));
-      
-      if (isGreeting) {
-        fs.appendFileSync(logPath, `[${timestamp}] 👋 Detected GREETING - No product suggestions\n\n`);
-        return { products: [], docs: [], mode: 'greeting', brands: [] };
+      if (greetingPatterns.some(p => p.test(cleanQuery))) {
+        return { products: [], mode: 'greeting' };
       }
 
-      const allProducts = await db.collection('products').find({}).toArray();
-      
-      // Tìm kiếm thông minh hơn
+      const vowelRatio = (cleanQuery.match(/[aeiouáàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵ]/gi) || []).length / cleanQuery.length;
+      const maxRepeat = Math.max(...(cleanQuery.match(/(.)\1+/g) || []).map(s => s.length));
+      if (vowelRatio < 0.15 || maxRepeat >= 5 || /^[^aeiouy]{5,}$/i.test(cleanQuery.split(/\s+/).filter(Boolean).join(''))) {
+        return { products: [], mode: 'gibberish' };
+      }
+
       const queryWords = cleanQuery.split(/\s+/).filter(w => w.length >= 2);
-      
-      const matchedProducts = allProducts.filter(p => {
-        const name = (p.name || "").toLowerCase();
-        const brand = (p.brand || "").toLowerCase();
-        
-        // Xử lý Keywords (có thể là mảng hoặc chuỗi)
-        let keywordsStr = "";
-        if (Array.isArray(p.keywords)) {
-          keywordsStr = p.keywords.join(" ").toLowerCase();
-        } else if (typeof p.keywords === 'string') {
-          keywordsStr = p.keywords.toLowerCase();
-        }
+      if (queryWords.length === 0) return { products: [], mode: 'general' };
 
-        return queryWords.some(word => 
-          name.includes(word) || 
-          brand.includes(word) || 
-          keywordsStr.includes(word)
-        );
-      });
+      const [vectorResults, keywordResults] = await Promise.all([
+        VectorSearchService.searchProducts(cleanQuery, tenantId, limit * 2).catch(() => [] as any[]),
+        runKeywordSearch(cleanQuery, tenantId, limit * 2),
+      ]);
 
-      fs.appendFileSync(logPath, `[${timestamp}] ✅ Found: ${matchedProducts.length} items\n\n`);
-
-      if (matchedProducts.length === 0) {
-        return { 
-          products: allProducts.slice(0, limit), 
-          docs: [], 
-          mode: 'general', 
-          brands: [] 
-        };
+      if (vectorResults.length === 0 && keywordResults.length === 0) {
+        return { products: [], mode: 'general' };
       }
 
-      return { 
-        products: matchedProducts.slice(0, limit), 
-        docs: [], 
-        mode: 'specific', 
-        brands: [] 
-      };
-      
+      if (vectorResults.length === 0) {
+        return { products: keywordResults, mode: 'specific' };
+      }
+
+      const merged = VectorSearchService.rrfMerge(vectorResults, keywordResults, 60, limit);
+      return { products: merged, mode: 'specific' };
     } catch (error: any) {
-      fs.appendFileSync(logPath, `[${timestamp}] ❌ Error at Search: ${error.message}\n\n`);
-      return { products: [], docs: [], mode: 'general', brands: [] };
+      console.error('❌ [SearchService Error]:', error.message);
+      return { products: [], mode: 'general' };
     }
   }
 }

@@ -25,11 +25,86 @@ export interface IProductCardConfig {
   showRating: boolean;
 }
 
+export interface INavLink {
+  label: string;
+  href: string;
+  order: number;
+  enabled: boolean;
+}
+
+export interface INavbarConfig {
+  logo: {
+    image: string;
+    text: string;
+    width: number;
+    height: number;
+  };
+  links: INavLink[];
+  style: {
+    background: string;
+    textColor: string;
+    accentColor: string;
+  };
+}
+
 export interface IGalleryImage {
   url: string;
   aspect: string;
   title: string;
   quote: string;
+}
+
+export interface IFooterLinkItem {
+  label: string;
+  href: string;
+  order: number;
+  enabled: boolean;
+}
+
+export interface IFooterColumn {
+  title: string;
+  links: IFooterLinkItem[];
+}
+
+export interface IFooterSocialLink {
+  platform: string;
+  url: string;
+  enabled: boolean;
+}
+
+export interface IFooterConfig {
+  style: {
+    background: string;
+    textColor: string;
+    headingColor: string;
+    borderColor: string;
+  };
+  brand: {
+    title: string;
+    description: string;
+    logo: string;
+    enabled: boolean;
+  };
+  columns: IFooterColumn[];
+  socialLinks: IFooterSocialLink[];
+  newsletter: {
+    enabled: boolean;
+    title: string;
+    description: string;
+    email: string;
+  };
+  copyright: {
+    text: string;
+    enabled: boolean;
+    showPaymentIcons: boolean;
+  };
+  layout: {
+    columnOrder: string[];
+    showBrand: boolean;
+    showNewsletter: boolean;
+    showSocialLinks: boolean;
+    showPaymentIcons: boolean;
+  };
 }
 
 export interface IHomepageConfig extends Document {
@@ -47,6 +122,8 @@ export interface IHomepageConfig extends Document {
   productCardConfig: IProductCardConfig;
   blogCardConfig: Record<string, any>;
   productSessionLayout: Record<string, any>;
+  navbar: INavbarConfig;
+  footer: IFooterConfig;
   updatedAt: Date;
 }
 
@@ -137,7 +214,150 @@ const HomepageConfigSchema = new Schema<IHomepageConfig>(
     galleryEn: { type: [GalleryImageSchema], default: [] },
     productCardConfig: { type: ProductCardConfigSchema, default: () => ({}) },
     blogCardConfig: { type: Schema.Types.Mixed, default: {} },
-    productSessionLayout: { type: Schema.Types.Mixed, default: {} }
+    productSessionLayout: { type: Schema.Types.Mixed, default: {} },
+    navbar: {
+      type: new Schema({
+        logo: {
+          type: new Schema({
+            image: { type: String, default: 'https://i.ibb.co/TxzQXcMT/original.png' },
+            text: { type: String, default: "L'essence" },
+            width: { type: Number, default: 120 },
+            height: { type: Number, default: 35 }
+          }, { _id: false }),
+          default: () => ({})
+        },
+        links: {
+          type: [new Schema({
+            label: { type: String, required: true },
+            href: { type: String, required: true },
+            order: { type: Number, default: 0 },
+            enabled: { type: Boolean, default: true }
+          }, { _id: false })],
+          default: [
+            { label: 'Trang chủ', href: '/', order: 0, enabled: true },
+            { label: 'Cửa hàng', href: '/collections', order: 1, enabled: true },
+            { label: 'Bộ sưu tập', href: '/bo-suu-tap', order: 2, enabled: true },
+            { label: 'Bài viết', href: '/blog', order: 3, enabled: true },
+            { label: 'Hỗ trợ', href: '/tro-giup', order: 4, enabled: true }
+          ]
+        },
+        style: {
+          type: new Schema({
+            background: { type: String, default: '#FFF5F5' },
+            textColor: { type: String, default: '#7A5C5C' },
+            accentColor: { type: String, default: '#C08497' },
+            iconSize: { type: Number, default: 26 }
+          }, { _id: false }),
+          default: () => ({})
+        },
+        layout: {
+          type: new Schema({
+            left: { type: [String], default: ['logo'] },
+            center: { type: [String], default: ['link-0', 'link-1', 'link-2', 'link-3', 'link-4'] },
+            right: { type: [String], default: ['search', 'cart', 'user'] }
+          }, { _id: false }),
+          default: () => ({})
+        }
+      },       { _id: false }),
+      default: () => ({})
+    },
+    footer: {
+      type: new Schema({
+        style: {
+          type: new Schema({
+            background: { type: String, default: 'rgba(255, 255, 255, 0.02)' },
+            textColor: { type: String, default: '#5D4040' },
+            headingColor: { type: String, default: '#7A5C5C' },
+            borderColor: { type: String, default: 'rgba(122, 92, 92, 0.08)' },
+          }, { _id: false }),
+          default: () => ({})
+        },
+        brand: {
+          type: new Schema({
+            title: { type: String, default: "L'essence" },
+            description: { type: String, default: 'Hành trình đánh thức giác quan thông qua những nốt hương haute couture. Mỗi sản phẩm là một tác phẩm nghệ thuật, mang tâm hồn và sự lãng mạn của nước Pháp.' },
+            logo: { type: String, default: '' },
+            enabled: { type: Boolean, default: true },
+          }, { _id: false }),
+          default: () => ({})
+        },
+        columns: {
+          type: [new Schema({
+            title: { type: String, required: true },
+            links: {
+              type: [new Schema({
+                label: { type: String, required: true },
+                href: { type: String, required: true },
+                order: { type: Number, default: 0 },
+                enabled: { type: Boolean, default: true },
+              }, { _id: false })],
+              default: []
+            },
+          }, { _id: false })],
+          default: [
+            {
+              title: 'Khám Phá',
+              links: [
+                { label: 'Bộ Sưu Tập', href: '/shop', order: 0, enabled: true },
+                { label: 'Sản Phẩm Mới', href: '/new-arrivals', order: 1, enabled: true },
+                { label: 'Câu Chuyện Thương Hiệu', href: '/about', order: 2, enabled: true },
+                { label: 'Liên Hệ', href: '/contact', order: 3, enabled: true },
+                { label: 'Cửa Hàng', href: '/stores', order: 4, enabled: true },
+              ]
+            },
+            {
+              title: 'Về chúng tôi',
+              links: [
+                { label: 'Giới thiệu', href: '/about', order: 0, enabled: true },
+                { label: 'Câu chuyện thương hiệu', href: '/about#story', order: 1, enabled: true },
+                { label: 'Tuyển dụng', href: '/careers', order: 2, enabled: true },
+                { label: 'Liên hệ', href: '/contact', order: 3, enabled: true },
+              ]
+            },
+          ]
+        },
+        socialLinks: {
+          type: [new Schema({
+            platform: { type: String, required: true },
+            url: { type: String, default: '' },
+            enabled: { type: Boolean, default: true },
+          }, { _id: false })],
+          default: [
+            { platform: 'instagram', url: '#', enabled: true },
+            { platform: 'facebook', url: '#', enabled: true },
+            { platform: 'twitter', url: '#', enabled: true },
+          ]
+        },
+        newsletter: {
+          type: new Schema({
+            enabled: { type: Boolean, default: true },
+            title: { type: String, default: 'Kết Nối' },
+            description: { type: String, default: 'Đăng ký nhận những đặc quyền riêng biệt và thông tin mới nhất từ L\'essence.' },
+            email: { type: String, default: 'concierge@lessence.com' },
+          }, { _id: false }),
+          default: () => ({})
+        },
+        copyright: {
+          type: new Schema({
+            text: { type: String, default: 'L\'essence. Trang web là sản phẩm của trường Cao đẳng FPT Polytechnic không có mục đích thương mại.' },
+            enabled: { type: Boolean, default: true },
+            showPaymentIcons: { type: Boolean, default: false },
+          }, { _id: false }),
+          default: () => ({})
+        },
+        layout: {
+          type: new Schema({
+            columnOrder: { type: [String], default: ['brand', 'col-0', 'col-1', 'newsletter'] },
+            showBrand: { type: Boolean, default: true },
+            showNewsletter: { type: Boolean, default: true },
+            showSocialLinks: { type: Boolean, default: true },
+            showPaymentIcons: { type: Boolean, default: false },
+          }, { _id: false }),
+          default: () => ({})
+        }
+      }, { _id: false }),
+      default: () => ({})
+    }
   },
   {
     timestamps: true,

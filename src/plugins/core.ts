@@ -6,6 +6,7 @@ import { AIService } from '../services/AIService.ts';
 import { QStashService } from '../services/QStashService.ts';
 import { PostHogService } from '../services/PostHogService.ts';
 import { AgentService } from '../services/AgentService.ts';
+import { ProductTaxonomyTerm } from '../models/ProductTaxonomyTerm.ts';
 
 /**
  * Core Plugin — Đóng gói toàn bộ các service và kết nối quan trọng.
@@ -14,6 +15,15 @@ import { AgentService } from '../services/AgentService.ts';
 export default fp(async (app) => {
   // 1. Kết nối Database & Redis
   await connectDB();
+
+  // Đồng bộ indexes với schema (drop index cũ, tạo index mới)
+  try {
+    await ProductTaxonomyTerm.syncIndexes();
+    app.log.info('ProductTaxonomyTerm indexes synced successfully');
+  } catch (err: any) {
+    app.log.warn(`ProductTaxonomyTerm syncIndexes: ${err.message}`);
+  }
+
   await connectRedis();
 
   // 2. Decorate app với các instance quan trọng

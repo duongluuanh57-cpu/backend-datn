@@ -35,6 +35,32 @@ export async function mediaRoutes(app: FastifyInstance) {
     MediaController.uploadR2
   );
 
+  app.delete(
+    '/delete',
+    {
+      config: {
+        rateLimit: {
+          max: 30,
+          timeWindow: '1 minute'
+        }
+      }
+    },
+    MediaController.deleteR2Image
+  );
+
+  app.delete(
+    '/delete-folder',
+    {
+      config: {
+        rateLimit: {
+          max: 20,
+          timeWindow: '1 minute'
+        }
+      }
+    },
+    MediaController.deleteR2Folder
+  );
+
   app.post(
     '/upload-url',
     {
