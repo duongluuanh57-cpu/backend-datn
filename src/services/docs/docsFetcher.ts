@@ -53,12 +53,16 @@ export class DocsFetcher {
     { path: 'Docs-Backend/ai-batch-chat.md', label: 'Backend AI Batch Chat', repo: 'backend' },
     { path: 'Docs-Backend/ai-embedding.md', label: 'Backend AI Embedding', repo: 'backend' },
     // Frontend docs (repo: frontend-datn, path: Docs-Frontend/)
-    { path: 'Docs-Frontend/CODING_STANDARDS.md', label: 'Frontend Coding Standards', repo: 'frontend' },
-    { path: 'Docs-Frontend/COMPONENT_ARCHITECTURE.md', label: 'Frontend Component Architecture', repo: 'frontend' },
-    { path: 'Docs-Frontend/PROJECT_STRUCTURE.md', label: 'Frontend Project Structure', repo: 'frontend' },
-    { path: 'Docs-Frontend/STATE_MANAGEMENT.md', label: 'Frontend State Management', repo: 'frontend' },
-    { path: 'Docs-Frontend/TECH_STACK.md', label: 'Frontend Tech Stack', repo: 'frontend' },
-    { path: 'Docs-Frontend/UI_CONVENTIONS.md', label: 'Frontend UI Conventions', repo: 'frontend' },
+    { path: 'Docs-Frontend/INDEX.md', label: 'Frontend Docs Index', repo: 'frontend' },
+    { path: 'Docs-Frontend/structure.md', label: 'Frontend Project Structure', repo: 'frontend' },
+    { path: 'Docs-Frontend/data-flow.md', label: 'Frontend Data Flow', repo: 'frontend' },
+    { path: 'Docs-Frontend/tech-stack.md', label: 'Frontend Tech Stack', repo: 'frontend' },
+    { path: 'Docs-Frontend/coding-standards.md', label: 'Frontend Coding Standards', repo: 'frontend' },
+    { path: 'Docs-Frontend/api-patterns.md', label: 'Frontend API Patterns', repo: 'frontend' },
+    { path: 'Docs-Frontend/component-architecture.md', label: 'Frontend Component Architecture', repo: 'frontend' },
+    { path: 'Docs-Frontend/state-management.md', label: 'Frontend State Management', repo: 'frontend' },
+    { path: 'Docs-Frontend/ui-conventions.md', label: 'Frontend UI Conventions', repo: 'frontend' },
+    { path: 'Docs-Frontend/env-variables.md', label: 'Frontend Environment Variables', repo: 'frontend' },
   ];
 
   /**
