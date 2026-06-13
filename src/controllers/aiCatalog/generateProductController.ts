@@ -6,7 +6,7 @@ import { Tag } from '../../models/Tag.ts';
 import { Brand } from '../../models/Brand.ts';
 import { Category } from '../../models/Category.ts';
 import { FuzzyMatchCache } from '../../services/FuzzyMatchCache.ts';
-import { sanitizeJsonString } from './sanitizeJson.ts';
+import { sanitizeJsonString, extractAndFixJson } from './sanitizeJson.ts';
 
 /**
  * Generate product info using AI (single-stage Gemini)
@@ -26,6 +26,13 @@ export async function generateProduct(req: FastifyRequest, reply: FastifyReply) 
       metaDescription,
       keywords,
       image,
+      longevity,
+      sillage,
+      durability,
+      scentTrail,
+      style,
+      suitableFor,
+      occasion,
       availableBrands,
       availableScentGroups,
       availableConcentrations,
@@ -47,6 +54,13 @@ export async function generateProduct(req: FastifyRequest, reply: FastifyReply) 
       metaDescription?: string;
       keywords?: string;
       image?: string;
+      longevity?: string;
+      sillage?: string;
+      durability?: string;
+      scentTrail?: string;
+      style?: string;
+      suitableFor?: string;
+      occasion?: string;
       availableBrands?: string[];
       availableScentGroups?: string[];
       availableConcentrations?: string[];
@@ -67,13 +81,20 @@ export async function generateProduct(req: FastifyRequest, reply: FastifyReply) 
     if (price && price > 0) preFilled.price = price;
     if (size?.trim()) preFilled.size = size.trim();
     if (description?.trim()) preFilled.description = description.trim();
-    if (tag?.trim()) preFilled.tag = tag.trim();
+    // KHÔNG gửi tag làm pre-filled để AI tự chọn theo rule (tránh giữ Sale cũ khi discount không đủ)
     if (quantityInStock && quantityInStock > 0) preFilled.quantityInStock = quantityInStock;
-    if (discountPercentage && discountPercentage > 0) preFilled.discountPercentage = discountPercentage;
+    // KHÔNG gửi discountPercentage làm pre-filled để AI tự chọn (tránh giữ 10% cũ)
     if (metaTitle?.trim()) preFilled.metaTitle = metaTitle.trim();
     if (metaDescription?.trim()) preFilled.metaDescription = metaDescription.trim();
     if (keywords?.trim()) preFilled.keywords = keywords.trim();
     if (image?.trim()) preFilled.image = image.trim();
+    if (longevity?.trim()) preFilled.longevity = longevity.trim();
+    if (sillage?.trim()) preFilled.sillage = sillage.trim();
+    if (durability?.trim()) preFilled.durability = durability.trim();
+    if (scentTrail?.trim()) preFilled.scentTrail = scentTrail.trim();
+    if (style?.trim()) preFilled.style = style.trim();
+    if (suitableFor?.trim()) preFilled.suitableFor = suitableFor.trim();
+    if (occasion?.trim()) preFilled.occasion = occasion.trim();
 
     const sizesJson = JSON.stringify(
       availableSizes || ['2ml', '5ml', '10ml', '30ml', '50ml', '75ml', '100ml', '125ml', '150ml']
@@ -117,6 +138,12 @@ export async function generateProduct(req: FastifyRequest, reply: FastifyReply) 
     // ── OPTIMIZATION 2: Single-stage prompt ─
     console.log(`🧠 [AI generateProduct] Single-stage generation with Gemini 3.1 Flash Lite for: ${name}`);
 
+    // Lọc availableTags — chỉ gửi tag đang tồn tại trong DB (tránh AI chọn tag đã xóa)
+    const activeTagNamesFromDb = new Set(Array.from(allTags.lookup.values()).map((t: any) => t.name));
+    const filteredTags = (availableTags || []).filter((t: string) => activeTagNamesFromDb.has(t));
+    // Fallback nếu filter hết: dùng tất cả tag từ DB (trừ standard)
+    const finalTagsForPrompt = filteredTags.length > 0 ? filteredTags : Array.from(allTags.lookup.values()).filter((t: any) => t.name.toLowerCase() !== 'standard').map((t: any) => t.name);
+
     const singleStagePrompt = `
 You are an elite luxury perfume catalog AI. Generate a complete, production-ready JSON profile for the perfume named "${name}".
 
@@ -127,36 +154,49 @@ AVAILABLE DATABASE VALUES (MUST use ONLY these — no exceptions):
 - Concentrations: ${JSON.stringify(availableConcentrations || [])}
 - Segments: ${JSON.stringify(availableSegments || [])}
 - Categories: ${JSON.stringify(availableCategories || availableGenders || [])}
-- Tags (chọn 1 tag phụ, KHÔNG chọn "Standard" — tag Standard sẽ được tự động thêm): ${JSON.stringify((availableTags || ['New', 'Sale', 'Trending', 'Limited']).filter((t: string) => t.toLowerCase() !== 'standard'))}
+- Tags (CHỈ được chọn từ danh sách này, KHÔNG tự ý thêm tag khác — chọn 1 tag phụ, KHÔNG chọn "Standard" — tag Standard sẽ được tự động thêm): ${JSON.stringify(finalTagsForPrompt.filter((t: string) => t.toLowerCase() !== 'standard'))}
 
 RULES:
 1. Brand: Must match EXACTLY one entry from the Brands list. If uncertain, pick the closest match.
-2. Tag: Must be EXACTLY one from the Tags list above (do NOT pick "Standard"). Pick the most relevant tag.
-3. scentGroup / concentration / segment / category: May select MULTIPLE values (2 or more) from each respective list.
-4. Sizes: Use ONLY sizes from the Sizes list. Format: "size:price" pairs separated by commas.
-5. Price: Standard retail price in VNĐ, rounded to nearest 10,000.
-6. Description: Write in Vietnamese with EXACTLY three bold headings.
+2. Tag: Must be EXACTLY one from the Tags list above (do NOT pick "Standard"). Pick the most relevant tag. IMPORTANT — Tag "Sale" chỉ được chọn khi discountPercentage > 10 VÀ discountEndDate khác null. Nếu không đáp ứng, KHÔNG chọn "Sale".
+3. scentGroup / concentration / segment / category: MUST select AT LEAST 2 values from each respective list. FAIL if you provide fewer than 2. Use comma-separated format.
+4. Sizes: Use ONLY sizes from the Sizes list. Format: "size:price" pairs separated by commas. QUAN TRỌNG — danh sách size PHẢI luôn bao gồm dung tích 50ml. Các dung tích khác (2ml, 5ml, 10ml, 30ml, 75ml, 100ml, ...) có thể có hoặc không, nhưng 50ml là BẮT BUỘC.
+5. Price: KHÔNG điền price — Price sẽ được lấy từ giá của dung tích 50ml bên size field. Price = 0.
+  6. Description: Write in Vietnamese with EXACTLY three bold headings. Separate each bold section with a blank line (use \n\n between sections).
 7. Language: All text fields in Vietnamese. No Chinese characters allowed.
 8. priceReport (300-500 từ, tiếng Việt): Must include 4 sections.
 9. sizeReport (300-500 từ, tiếng Việt): Must include 4 sections.
 10. discountReport (300-500 từ, tiếng Việt): Must include 4 sections.
+11. Pre-filled fields (already provided by user) MUST be kept as-is — do NOT regenerate or modify them.
+
+PRE-FILLED FIELDS (keep these values unchanged): ${JSON.stringify(Object.keys(preFilled).length > 0 ? preFilled : '(none)')}
 
 Output ONLY a raw valid JSON object. No markdown, no code blocks.
 
 {
   "brand": "string from brand list",
   "tag": "string from tag list",
-  "scentGroup": "string from scent group list",
-  "concentration": "string from concentration list",
-  "segment": "string from segment list",
-  "category": "string from category list",
+  "scentGroup": "scent group 1, scent group 2",
+  "concentration": "concentration 1, concentration 2",
+  "segment": "segment 1, segment 2",
+  "category": "category 1, category 2",
   "description": "Vietnamese description with 3 bold sections",
-  "price": number,
-  "size": "size:price, size:price, ...",
+  "size": "size:price, size:price, ... (PHẢI có 50ml)",
   "discountPercentage": number,
+  "discountStartDate": "ISO date string or null (ví dụ 2026-07-15T00:00:00.000Z, null nếu không có giảm giá)",
+  "discountEndDate": "ISO date string or null (ví dụ 2026-08-15T00:00:00.000Z, null nếu không có giảm giá)",
   "priceReport": "Vietnamese report ~400 words with 4 bold sections",
   "sizeReport": "Vietnamese report ~400 words with 4 bold sections",
   "discountReport": "Vietnamese report ~400 words with 4 bold sections",
+  "longevity": "Thời gian lưu hương (VD: 7 - 9 giờ)",
+  "sillage": "Độ tỏa hương (VD: 1m)",
+  "durability": "Độ bền mùi (VD: Ổn định từ sáng tới chiều, không bị bay mùi nhanh)",
+  "scentTrail": "Vệt hương (VD: Mịn, rõ nét, luôn tạo cảm giác sạch sẽ)",
+  "season": "Mùa phù hợp, dùng , để phân cách",
+  "time": "Thời gian phù hợp, dùng , để phân cách",
+  "style": "Phong cách (VD: Lịch lãm, hiện đại)",
+  "suitableFor": "Đối tượng phù hợp, dùng | để phân cách (VD: văn phòng | hẹn hò | tiệc tối)",
+  "occasion": "Dịp sử dụng, dùng | để phân cách (VD: ban ngày | đi làm | dự tiệc)",
   "metaTitle": "SEO title under 60 chars in Vietnamese",
   "metaDescription": "SEO desc under 160 chars in Vietnamese",
   "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"]
@@ -177,61 +217,95 @@ Output ONLY a raw valid JSON object. No markdown, no code blocks.
     let productInfo: any;
     try {
       console.log(`📝 [AI Raw JSON] Length: ${jsonString.length} chars`);
-      productInfo = JSON.parse(jsonString);
+      productInfo = extractAndFixJson(jsonString);
+      console.log(`✅ [AI JSON] Successfully parsed`);
     } catch (parseError: any) {
-      console.error(`❌ [AI JSON Parse Error] ${parseError.message}`);
-      try {
-        let fixedJson = jsonString.replace(/,(\s*[}\]])/g, '$1');
-        fixedJson = sanitizeJsonString(fixedJson);
-        console.log(`🔧 [AI JSON Fix Attempt] Applying fixes...`);
-        productInfo = JSON.parse(fixedJson);
-        console.log(`✅ [AI JSON Fix] Successfully parsed after fixes`);
-      } catch (fixError: any) {
-        console.error(`❌ [AI JSON Fix Failed] ${fixError.message}`);
-        return reply.status(500).send({
-          error: 'AI trả về JSON không hợp lệ',
-          details: parseError.message,
-          rawResponse: jsonString.substring(0, 500)
-        });
-      }
+      console.error(`❌ [AI JSON Parse Failed] ${parseError.message}`);
+      return reply.status(500).send({
+        error: 'AI trả về JSON không hợp lệ',
+        details: parseError.message,
+        rawResponse: jsonString.substring(0, 500)
+      });
     }
+
+    // Parse giá từ dung tích 50ml trong size field — tự động, không hardcode
+    let priceFromSize = 0;
+    const sizeStr = String(productInfo.size || '');
+    sizeStr.split(',').forEach((s: string) => {
+      const parts = s.trim().split(':');
+      if (parts.length < 2) return;
+      const label = parts[0].toLowerCase().replace(/\s/g, '');
+      const val = Number(parts[1]) || 0;
+      if (!priceFromSize) {
+        // Lấy giá của size đầu tiên (thường là nhỏ nhất) làm fallback
+        priceFromSize = val;
+      }
+      // Ưu tiên 50ml — match "50ml" hoặc số "50"
+      if (label === '50ml' || label === '50' || /^50/.test(label)) {
+        priceFromSize = val;
+      }
+    });
+    console.log(`[AI Price] size="${sizeStr}" → priceFromSize=${priceFromSize}`);
+    delete productInfo.price;
+    productInfo.price = priceFromSize;
 
     // ── OPTIMIZATION 3: Resolve taxonomy & tag in-memory ─
-    const [scentGroupResult, concentrationResult, segmentResult] = await Promise.all([
-      Promise.resolve((() => {
-        if (!productInfo.scentGroup) return null;
-        const names = String(productInfo.scentGroup).split(',').map((s: string) => s.trim()).filter(Boolean);
-        return names.map((n: string) => findTaxonomy(n, 'scent_group')).filter(Boolean);
-      })()),
-      Promise.resolve((() => {
-        if (!productInfo.concentration) return null;
-        const names = String(productInfo.concentration).split(',').map((s: string) => s.trim()).filter(Boolean);
-        return names.map((n: string) => findTaxonomy(n, 'concentration')).filter(Boolean);
-      })()),
-      Promise.resolve((() => {
-        if (!productInfo.segment) return null;
-        const names = String(productInfo.segment).split(',').map((s: string) => s.trim()).filter(Boolean);
-        return names.map((n: string) => findTaxonomy(n, 'segment')).filter(Boolean);
-      })())
-    ]);
 
-    if (scentGroupResult?.length) {
-      productInfo.scentGroups = scentGroupResult.map((t: any) => t._id);
-      productInfo.scentGroup = scentGroupResult.map((t: any) => t.name).join(', ');
+    // Helper: ensure at least 2 items from AI hint + DB pool
+    const ensureMinTwo = (hint: string, pool: any[], typeSlug: string): { names: string[]; ids: string[] } => {
+      const names: string[] = [];
+      const ids: string[] = [];
+      console.log(`🔍 [ensureMinTwo:${typeSlug}] hint="${String(hint || '')}", pool size=${pool.length}`);
+      if (pool.length < 2) {
+        console.warn(`⚠️ [ensureMinTwo:${typeSlug}] Pool has only ${pool.length} items`);
+      }
+      if (hint) {
+        const input = String(hint).split(',').map((s) => s.trim()).filter(Boolean);
+        for (const name of input) {
+          const found = findTaxonomy(name, typeSlug);
+          const matchInfo = found ? `matched="${found.name}"` : 'NO MATCH (fallback)';
+          console.log(`  → [${typeSlug}] hint="${name}" ${matchInfo}`);
+          if (found && !names.includes(found.name)) { names.push(found.name); ids.push(found._id); }
+        }
+      }
+      for (const item of pool) {
+        if (names.length >= 2) break;
+        if (!names.includes(item.name)) {
+          console.log(`  → [${typeSlug}] pool fallback adding="${item.name}"`);
+          names.push(item.name); ids.push(item._id);
+        }
+      }
+      console.log(`✅ [ensureMinTwo:${typeSlug}] result: ${names.join(', ')} (${names.length} items)`);
+      return { names, ids };
+    };
+
+    // Scent groups
+    {
+      const sg = ensureMinTwo(productInfo.scentGroup, taxonomyByType['scent_group'] || [], 'scent_group');
+      productInfo.scentGroups = sg.ids;
+      productInfo.scentGroup = sg.names.join(', ');
       console.log(`✅ scentGroup resolved: ${productInfo.scentGroup}`);
     }
-    if (concentrationResult?.length) {
-      productInfo.concentrations = concentrationResult.map((t: any) => t._id);
-      productInfo.concentration = concentrationResult.map((t: any) => t.name).join(', ');
+    // Concentrations
+    {
+      const co = ensureMinTwo(productInfo.concentration, taxonomyByType['concentration'] || [], 'concentration');
+      productInfo.concentrations = co.ids;
+      productInfo.concentration = co.names.join(', ');
       console.log(`✅ concentration resolved: ${productInfo.concentration}`);
     }
-    if (segmentResult?.length) {
-      productInfo.segments = segmentResult.map((t: any) => t._id);
-      productInfo.segment = segmentResult.map((t: any) => t.name).join(', ');
+    // Segments
+    {
+      const se = ensureMinTwo(productInfo.segment, taxonomyByType['segment'] || [], 'segment');
+      productInfo.segments = se.ids;
+      productInfo.segment = se.names.join(', ');
       console.log(`✅ segment resolved: ${productInfo.segment}`);
     }
 
-    // Tag matching
+    // ── Sale tag enforcement: chỉ chọn Sale khi > 10% + có discountEndDate ──
+    const hasValidSale = (productInfo.discountPercentage > 10 && productInfo.discountEndDate);
+    const saleTagEntry = allTags.lookup.get('sale');
+
+    // Tag matching — Standard + at least 1 more
     const standardTag = allTags.lookup.get('standard');
     const resolvedTagIds: any[] = [];
     const resolvedTagNames: string[] = [];
@@ -245,9 +319,32 @@ Output ONLY a raw valid JSON object. No markdown, no code blocks.
     if (productInfo.tag) {
       const matched = FuzzyMatchCache.fuzzyFind(productInfo.tag, allTags.lookup, (t: any) => t.name);
       if (matched && FuzzyMatchCache.normalize(matched.name) !== 'standard') {
-        resolvedTagIds.push(matched._id);
-        resolvedTagNames.push(matched.name);
-        console.log(`✅ AI tag resolved: ${matched.name}`);
+        const isSale = FuzzyMatchCache.normalize(matched.name) === 'sale';
+        if (isSale && !hasValidSale) {
+          console.log(`⚠️ AI picked "Sale" but discount (${productInfo.discountPercentage}%, endDate=${productInfo.discountEndDate}) does NOT qualify — skipping Sale tag`);
+        } else {
+          resolvedTagIds.push(matched._id);
+          resolvedTagNames.push(matched.name);
+          console.log(`✅ AI tag resolved: ${matched.name}`);
+        }
+      }
+    }
+
+    // If discount qualifies for Sale but no Sale tag picked, auto-add
+    if (hasValidSale && saleTagEntry && !resolvedTagNames.some(n => FuzzyMatchCache.normalize(n) === 'sale')) {
+      resolvedTagIds.push(saleTagEntry._id);
+      resolvedTagNames.push(saleTagEntry.name);
+      console.log(`✅ Sale tag auto-added (discount ${productInfo.discountPercentage}% with endDate)`);
+    }
+
+    // Ensure at least 2 tags (Standard + 1 random)
+    if (resolvedTagIds.length < 2) {
+      for (const [norm, tag] of allTags.lookup) {
+        if (norm === 'standard') continue;
+        resolvedTagIds.push(tag._id);
+        resolvedTagNames.push(tag.name);
+        console.log(`✅ Extra tag auto-added: ${tag.name}`);
+        break;
       }
     }
 
@@ -270,16 +367,27 @@ Output ONLY a raw valid JSON object. No markdown, no code blocks.
       }
     }
 
-    // Category matching
-    if (productInfo.category) {
-      const names = String(productInfo.category).split(',').map((s: string) => s.trim()).filter(Boolean);
-      const matched = names.map(n => FuzzyMatchCache.fuzzyFind(n, allCategories.lookup, (c: any) => c.name)).filter(Boolean);
-      if (matched.length > 0) {
-        productInfo.categories = matched.map((c: any) => c._id);
-        productInfo.category = matched.map((c: any) => c.name).join(', ');
+    // Category matching — ensure at least 2
+    {
+      const catNames: string[] = [];
+      const catIds: string[] = [];
+      if (productInfo.category) {
+        const names = String(productInfo.category).split(',').map((s: string) => s.trim()).filter(Boolean);
+        const matched = names.map(n => FuzzyMatchCache.fuzzyFind(n, allCategories.lookup, (c: any) => c.name)).filter(Boolean);
+        for (const c of matched) {
+          if (!catNames.includes(c.name)) { catNames.push(c.name); catIds.push(c._id); }
+        }
+      }
+      for (const c of (allCategories.items || [])) {
+        if (catNames.length >= 2) break;
+        if (!catNames.includes(c.name)) { catNames.push(c.name); catIds.push(c._id); }
+      }
+      productInfo.categories = catIds;
+      productInfo.category = catNames.join(', ');
+      if (catNames.length > 0) {
         console.log(`✅ category resolved: ${productInfo.category}`);
       } else {
-        console.warn(`⚠️ Category "${productInfo.category}" not found in database`);
+        console.warn(`⚠️ No categories found in database`);
       }
     }
 

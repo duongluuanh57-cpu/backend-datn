@@ -29,6 +29,15 @@ export class ProductMutationService {
     if (data.discountStartDate !== undefined) updateData.discountStartDate = data.discountStartDate;
     if (data.discountEndDate !== undefined) updateData.discountEndDate = data.discountEndDate;
     if (data.keywords !== undefined) updateData.keywords = data.keywords;
+    if (data.longevity !== undefined) updateData.longevity = data.longevity;
+    if (data.sillage !== undefined) updateData.sillage = data.sillage;
+    if (data.durability !== undefined) updateData.durability = data.durability;
+    if (data.scentTrail !== undefined) updateData.scentTrail = data.scentTrail;
+    if (data.style !== undefined) updateData.style = data.style;
+    if (data.suitableFor !== undefined) updateData.suitableFor = data.suitableFor;
+    if (data.occasion !== undefined) updateData.occasion = data.occasion;
+    if (data.season !== undefined) updateData.season = data.season;
+    if (data.time !== undefined) updateData.time = data.time;
 
     // Brand mapping - chỉ tìm, KHÔNG tạo mới (case-insensitive, bỏ qua khoảng trắng thừa)
     if (data.brand) {
@@ -48,18 +57,16 @@ export class ProductMutationService {
       }
     }
 
-    // Tags mapping — ghi vào bảng trung gian ProductTag
+    // Tags mapping — ghi vào bảng trung gian ProductTag (CHỈ dùng tag đã tồn tại trong DB)
     if (data.tag !== undefined) {
       const tagSlugs = data.tag.split(',').map((s: string) => s.trim()).filter(Boolean);
-      const tagIds = [];
-      for (const slug of tagSlugs) {
-        let tagDoc = await Tag.findOne({ slug, tenantId });
-        if (!tagDoc) {
-          const name = slug.charAt(0).toUpperCase() + slug.slice(1);
-          tagDoc = await Tag.create({ name, slug, status: 'active', tenantId });
-        }
-        tagIds.push(tagDoc._id);
+      const tagDocs = await Tag.find({ slug: { $in: tagSlugs }, tenantId }).lean();
+      const foundSlugs = new Set(tagDocs.map(t => t.slug));
+      const skipped = tagSlugs.filter(s => !foundSlugs.has(s));
+      if (skipped.length > 0) {
+        console.warn(`⚠️ [Tag] Skipping ${skipped.length} tag(s) not found in DB: ${skipped.join(', ')} — will NOT auto-create`);
       }
+      const tagIds = tagDocs.map(t => t._id);
       // Xóa tags cũ rồi insert lại
       await ProductTag.deleteMany({ productId: id, tenantId });
       if (tagIds.length > 0) {
@@ -323,6 +330,15 @@ export class ProductMutationService {
     if (data.discountEndDate !== undefined) productData.discountEndDate = data.discountEndDate;
     if (data.image !== undefined) productData.image = data.image;
     if (data.keywords !== undefined) productData.keywords = data.keywords;
+    if (data.longevity !== undefined) productData.longevity = data.longevity;
+    if (data.sillage !== undefined) productData.sillage = data.sillage;
+    if (data.durability !== undefined) productData.durability = data.durability;
+    if (data.scentTrail !== undefined) productData.scentTrail = data.scentTrail;
+    if (data.style !== undefined) productData.style = data.style;
+    if (data.suitableFor !== undefined) productData.suitableFor = data.suitableFor;
+    if (data.occasion !== undefined) productData.occasion = data.occasion;
+    if (data.season !== undefined) productData.season = data.season;
+    if (data.time !== undefined) productData.time = data.time;
 
     // Brand mapping - Ưu tiên brandId, fallback sang tên brand (case-insensitive, bỏ qua khoảng trắng thừa)
     if (data.brand) {
@@ -404,18 +420,18 @@ export class ProductMutationService {
       (productData._pendingSegIds as any[])?.length > 0 && ProductTaxonomyTermService.setTermsForProduct(saved._id.toString(), 'segment', productData._pendingSegIds as any[], tenantId),
     ]);
 
-    // Ghi tag links vào bảng trung gian ProductTag
+    // Ghi tag links vào bảng trung gian ProductTag (CHỈ dùng tag đã tồn tại trong DB)
     if (pendingTagSlugs.length > 0) {
-      const tagDocs = [];
-      for (const slug of pendingTagSlugs) {
-        let tagDoc = await Tag.findOne({ slug, tenantId });
-        if (!tagDoc) {
-          const name = slug.charAt(0).toUpperCase() + slug.slice(1);
-          tagDoc = await Tag.create({ name, slug, status: 'active', tenantId });
-        }
-        tagDocs.push(tagDoc._id);
+      const tagDocs = await Tag.find({ slug: { $in: pendingTagSlugs }, tenantId }).lean();
+      const foundSlugs = new Set(tagDocs.map(t => t.slug));
+      const skipped = pendingTagSlugs.filter(s => !foundSlugs.has(s));
+      if (skipped.length > 0) {
+        console.warn(`⚠️ [Tag] Skipping ${skipped.length} tag(s) not found in DB: ${skipped.join(', ')} — will NOT auto-create`);
       }
-      await ProductTag.insertMany(tagDocs.map(tagId => ({ productId: saved._id, tagId, tenantId })));
+      const tagIds = tagDocs.map(t => t._id);
+      if (tagIds.length > 0) {
+        await ProductTag.insertMany(tagIds.map(tagId => ({ productId: saved._id, tagId, tenantId })));
+      }
     }
 
     // Size / Variants mapping

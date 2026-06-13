@@ -238,7 +238,8 @@ const HomepageConfigSchema = new Schema<IHomepageConfig>(
             { label: 'Cửa hàng', href: '/collections', order: 1, enabled: true },
             { label: 'Bộ sưu tập', href: '/bo-suu-tap', order: 2, enabled: true },
             { label: 'Bài viết', href: '/blog', order: 3, enabled: true },
-            { label: 'Hỗ trợ', href: '/tro-giup', order: 4, enabled: true }
+            { label: 'Hỗ trợ', href: '/tro-giup', order: 4, enabled: true },
+            { label: 'Về chúng tôi', href: '/about', order: 5, enabled: true }
           ]
         },
         style: {
@@ -253,7 +254,7 @@ const HomepageConfigSchema = new Schema<IHomepageConfig>(
         layout: {
           type: new Schema({
             left: { type: [String], default: ['logo'] },
-            center: { type: [String], default: ['link-0', 'link-1', 'link-2', 'link-3', 'link-4'] },
+            center: { type: [String], default: ['link-0', 'link-1', 'link-2', 'link-3', 'link-4', 'link-5'] },
             right: { type: [String], default: ['search', 'cart', 'user'] }
           }, { _id: false }),
           default: () => ({})

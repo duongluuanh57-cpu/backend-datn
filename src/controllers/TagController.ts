@@ -136,4 +136,34 @@ export class TagController {
       });
     }
   }
+
+  /**
+   * POST /api/tags/bulk-delete
+   */
+  static async bulkDeleteTags(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const { ids } = req.body as { ids: string[] };
+      
+      if (!ids || ids.length === 0) {
+        return reply.status(400).send({
+          success: false,
+          message: 'Vui lòng cung cấp danh sách ID để xóa.',
+        });
+      }
+
+      const result = await TagService.bulkDeleteTags(ids, tenantId);
+      
+      return reply.status(200).send({
+        success: true,
+        data: { deletedCount: result },
+        message: `Đã xóa ${result} tag thành công.`,
+      });
+    } catch (error: any) {
+      return reply.status(500).send({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
 }

@@ -148,6 +148,8 @@ export class ProductQueryService {
       brand?: string;
       capacity?: string;
       priceRange?: string;
+      minPrice?: number;
+      maxPrice?: number;
       scentGroup?: string;
       concentration?: string;
       segment?: string;
@@ -156,7 +158,7 @@ export class ProductQueryService {
       filterTag?: string;
     } = {}
   ): Promise<any[]> {
-    const { brand, capacity, priceRange, scentGroup, concentration, segment, sortBy = 'newest', limit = 20, filterTag } = filters;
+    const { brand, capacity, priceRange, minPrice, maxPrice, scentGroup, concentration, segment, sortBy = 'newest', limit = 20, filterTag } = filters;
 
     // Merge filterTag (từ admin config) vào danh sách tag slugs mặc định
     const tagSlugsMap: Record<string, string[]> = {
@@ -174,7 +176,7 @@ export class ProductQueryService {
     }
     if (!slugs || slugs.length === 0) return [];
 
-    const cachePayload = { brand, capacity, priceRange, scentGroup, concentration, segment, sortBy, limit, filterTag };
+    const cachePayload = { brand, capacity, priceRange, minPrice, maxPrice, scentGroup, concentration, segment, sortBy, limit, filterTag };
     const cacheHash = crypto.createHash('md5').update(JSON.stringify(cachePayload)).digest('hex');
     const cacheKey = `products:public:${type}:${tenantId}:${cacheHash}`;
 
@@ -244,6 +246,12 @@ export class ProductQueryService {
         if (priceRange === 'over-3m' && actualPrice <= 3000000) return false;
       }
 
+      if (minPrice !== undefined || maxPrice !== undefined) {
+        const actualPrice = getActualPrice(product);
+        if (minPrice !== undefined && actualPrice < minPrice) return false;
+        if (maxPrice !== undefined && actualPrice > maxPrice) return false;
+      }
+
       return true;
     });
 
@@ -285,34 +293,24 @@ export class ProductQueryService {
 
     const queryBase: any = {
       tenantId,
-      discountPercentage: { $gt: 0 }
+      discountPercentage: { $gt: 0 },
+      discountEndDate: { $gt: now },
+      $or: [
+        { discountStartDate: null },
+        { discountStartDate: { $exists: false } },
+        { discountStartDate: { $lte: now } }
+      ]
     };
     if (saleProductIds.length > 0) queryBase._id = { $in: saleProductIds };
 
-    // Tìm sản phẩm giảm giá có thời gian kết thúc gần nhất trong tương lai
-    const upcomingSale = await Product.findOne({
-      ...queryBase,
-      discountEndDate: { $gt: now }
-    }).sort({ discountEndDate: 1 });
-
     let productsRaw: any[] = [];
 
-    if (upcomingSale && upcomingSale.discountEndDate) {
-      const targetEndDate = upcomingSale.discountEndDate;
-      // Chỉ lấy các sản phẩm có cùng thời gian kết thúc giảm giá này
-      productsRaw = await Product.find({
-        ...queryBase,
-        discountEndDate: targetEndDate,
-        $or: [
-          { discountStartDate: null },
-          { discountStartDate: { $exists: false } },
-          { discountStartDate: { $lte: now } }
-        ]
-      })
+    if (await Product.countDocuments(queryBase).maxTimeMS(3000)) {
+      productsRaw = await Product.find(queryBase)
         .populate('brandId')
         .populate('categories')
-        .sort({ createdAt: -1 })
-        .limit(4)
+        .sort({ discountEndDate: 1, createdAt: -1 })
+        .limit(20)
         .lean();
     }
 
@@ -468,7 +466,23 @@ export class ProductQueryService {
    * Gợi ý sản phẩm cho Navbar search (autocomplete lightweight)
    */
   static async suggestProducts(tenantId: string, query: string, limit: number = 8): Promise<any[]> {
-    if (!query || !query.trim()) return [];
+    if (!query || !query.trim()) {
+      // Return random products when no query
+      const randomProducts = await Product.aggregate([
+        { $match: { tenantId } },
+        { $sample: { size: limit } },
+        { $lookup: { from: 'brands', localField: 'brandId', foreignField: '_id', as: 'brand' } },
+        { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
+        { $project: { name: 1, price: 1, image: 1, brand: '$brand.name' } },
+      ]);
+      return randomProducts.map(p => ({
+        _id: p._id,
+        name: p.name,
+        price: p.price,
+        image: p.image || '',
+        brand: p.brand || '',
+      }));
+    }
 
     const escaped = query.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const cacheKey = `products:suggest:${tenantId}:${escaped.toLowerCase()}`;
@@ -480,9 +494,19 @@ export class ProductQueryService {
       console.warn('Redis error in suggestProducts:', err);
     }
 
-    const productsRaw = await Product.find({
+    // Find matching brand IDs for brand name search
+    const matchingBrands = await Brand.find({
       tenantId,
       name: { $regex: `^${escaped}`, $options: 'i' }
+    }).select('_id').lean();
+    const brandIds = matchingBrands.map(b => b._id);
+
+    const productsRaw = await Product.find({
+      tenantId,
+      $or: [
+        { name: { $regex: `^${escaped}`, $options: 'i' } },
+        { brandId: { $in: brandIds } },
+      ]
     })
       .populate('brandId', 'name')
       .select('name price image brandId')

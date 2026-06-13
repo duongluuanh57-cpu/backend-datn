@@ -34,4 +34,5 @@ export async function taxonomyV2Routes(app: FastifyInstance) {
   app.post('/:taxonomyId/terms', { preHandler: authMiddleware }, TaxonomyTermController.create);
   app.patch('/:taxonomyId/terms/:id', { preHandler: authMiddleware }, TaxonomyTermController.update);
   app.delete('/:taxonomyId/terms/:id', { preHandler: authMiddleware }, TaxonomyTermController.remove);
+  app.post('/:taxonomyId/terms/bulk-delete', { preHandler: authMiddleware }, TaxonomyTermController.bulkRemove);
 }

@@ -11,4 +11,5 @@ export async function tagRoutes(app: FastifyInstance) {
   app.post('/', { preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')] }, TagController.createTag);
   app.patch('/:id', { preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')] }, TagController.updateTag);
   app.delete('/:id', { preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')] }, TagController.deleteTag);
+  app.post('/bulk-delete', { preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')] }, TagController.bulkDeleteTags);
 }

@@ -19,36 +19,7 @@ export class TagService {
    * Fetch all tags for the tenant (backward compat — full list)
    */
   static async getAllTags(tenantId: string): Promise<ITag[]> {
-    let tags = await Tag.find({ tenantId, status: 'active' }).sort({ name: 1 });
-    if (tags.length === 0) {
-      console.log(`[Tag Seeding] Seeding default tags ('Sale', 'New', and 'Limited') for tenant: ${tenantId}`);
-      try {
-        const defaultTags = [
-          {
-            name: 'Giảm giá',
-            slug: 'Sale',
-            status: 'active',
-            tenantId
-          },
-          {
-            name: 'Sản phẩm mới',
-            slug: 'New',
-            status: 'active',
-            tenantId
-          },
-          {
-            name: 'Giới hạn',
-            slug: 'Limited',
-            status: 'active',
-            tenantId
-          }
-        ];
-        await Tag.insertMany(defaultTags);
-        tags = await Tag.find({ tenantId, status: 'active' }).sort({ name: 1 });
-      } catch (err) {
-        console.error('Error seeding default tags:', err);
-      }
-    }
+    const tags = await Tag.find({ tenantId, status: 'active' }).sort({ name: 1 });
     return tags;
   }
 
@@ -112,11 +83,13 @@ export class TagService {
    * Delete tag from the system
    */
   static async deleteTag(id: string, tenantId: string): Promise<boolean> {
-    const tag = await Tag.findOne({ _id: id, tenantId });
-    if (tag && (tag.slug === 'Sale' || tag.slug === 'New')) {
-      throw new Error('Vui lòng kiểm tra lại thẻ (Sale / New).');
-    }
     const result = await Tag.deleteOne({ _id: id, tenantId });
     return result.deletedCount > 0;
+  }
+
+  static async bulkDeleteTags(ids: string[], tenantId: string): Promise<number> {
+    if (!ids || ids.length === 0) return 0;
+    const result = await Tag.deleteMany({ _id: { $in: ids }, tenantId });
+    return result.deletedCount;
   }
 }

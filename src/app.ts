@@ -87,6 +87,7 @@ export function buildApp(): FastifyInstance {
   // Rate Limiting — bảo vệ backend khỏi quá tải
   app.register(rateLimit, {
     max: (request: any) => {
+      if (request.method === 'GET' || request.method === 'HEAD') return Number.MAX_SAFE_INTEGER;
       const user = (request as any).user;
       if (user?.role === 'ADMIN') return 5000;
       if (user?.role === 'SUBADMIN') return 2000;

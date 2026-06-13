@@ -18,6 +18,7 @@ export async function productRoutes(app: FastifyInstance) {
 
   // Quản lý sản phẩm (CRUD)
   app.get('/', ProductController.getAllProducts);
+  app.get('/:id/images', ProductController.getProductImages);
   app.get('/:id', ProductController.getProductById);
   
   // Tạo/Cập nhật/Xóa sản phẩm (Chỉ Admin/Subadmin)

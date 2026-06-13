@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { ProductService } from '../../services/ProductService.ts';
+import { ProductImage } from '../../models/ProductImage.ts';
 
 export class ProductListingController {
   /**
@@ -42,7 +43,7 @@ export class ProductListingController {
   }
 
   /**
-   * GET /api/products/public?type=trending|new|limited&brand=&capacity=&priceRange=&scentGroup=&concentration=&segment=&sortBy=newest&limit=20
+   * GET /api/products/public?type=trending|new|limited&brand=&capacity=&minPrice=&maxPrice=&scentGroup=&concentration=&segment=&sortBy=newest&limit=20
    */
   static async getPublicProducts(req: FastifyRequest, reply: FastifyReply) {
     try {
@@ -52,6 +53,8 @@ export class ProductListingController {
         brand?: string;
         capacity?: string;
         priceRange?: string;
+        minPrice?: string;
+        maxPrice?: string;
         scentGroup?: string;
         concentration?: string;
         segment?: string;
@@ -69,6 +72,8 @@ export class ProductListingController {
         brand: query.brand,
         capacity: query.capacity,
         priceRange: query.priceRange,
+        minPrice: query.minPrice ? Number(query.minPrice) : undefined,
+        maxPrice: query.maxPrice ? Number(query.maxPrice) : undefined,
         scentGroup: query.scentGroup,
         concentration: query.concentration,
         segment: query.segment,
@@ -138,9 +143,6 @@ export class ProductListingController {
     try {
       const tenantId = (req as any).user?.tenantId || 'default-tenant';
       const { q, limit } = req.query as { q?: string; limit?: string };
-      if (!q || !q.trim()) {
-        return reply.status(200).send({ success: true, data: [] });
-      }
       const products = await ProductService.suggestProducts(
         tenantId,
         q.trim(),
@@ -183,6 +185,20 @@ export class ProductListingController {
       const product = await ProductService.getProductById(id, tenantId);
       if (!product) return reply.status(404).send({ success: false, message: 'Không tìm thấy sản phẩm' });
       return reply.status(200).send({ success: true, data: product });
+    } catch (error: any) {
+      return reply.status(500).send({ success: false, message: error.message });
+    }
+  }
+
+  /**
+   * GET /api/products/:id/images
+   */
+  static async getProductImages(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { id } = req.params as { id: string };
+      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const images = await ProductImage.find({ productId: id, tenantId }).sort({ createdAt: 1 });
+      return reply.status(200).send({ success: true, data: images.map(img => img.url) });
     } catch (error: any) {
       return reply.status(500).send({ success: false, message: error.message });
     }

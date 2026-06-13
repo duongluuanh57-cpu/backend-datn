@@ -10,9 +10,11 @@ export async function autocomplete(req: FastifyRequest, reply: FastifyReply) {
       context?: any;
     };
 
-    if (!field || !currentValue) {
-      return reply.status(400).send({ error: 'Field and currentValue are required' });
+    if (!field) {
+      return reply.status(400).send({ error: 'Field is required' });
     }
+
+    const isEmpty = !currentValue || !currentValue.trim();
 
     // Generate a cache key based on the field and prefix
     const cleanVal = currentValue.trim().toLowerCase();
@@ -33,7 +35,18 @@ export async function autocomplete(req: FastifyRequest, reply: FastifyReply) {
 
     let systemPrompt = '';
     if (field === 'name') {
-      systemPrompt = `
+      if (isEmpty) {
+        systemPrompt = `
+Suggest 3 popular luxury perfume names for a search heading.
+Return exactly 3 lines, one suggestion per line. No markdown, no numbers.
+Keep each suggestion under 30 characters.
+Example:
+Dior Sauvage
+Chanel No 5
+Tom Ford Oud Wood
+`;
+      } else {
+        systemPrompt = `
 Suggest 3 luxury perfume names continuing: "${currentValue}".
 Return exactly 3 lines, one suggestion per line. No markdown, no numbers.
 Example:
@@ -41,6 +54,7 @@ Sweet Vanilla Bourbon
 Sweet Violet Oud
 Sweet Amber Nights
 `;
+      }
     } else if (field === 'description') {
       const prodName = context?.name || '';
       systemPrompt = `

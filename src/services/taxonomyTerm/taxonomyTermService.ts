@@ -91,6 +91,14 @@ export class TaxonomyTermService {
     return result.deletedCount > 0;
   }
 
+  static async bulkDelete(taxonomyId: string, ids: string[], tenantId: string): Promise<number> {
+    if (!ids || ids.length === 0) return 0;
+    await ProductTaxonomyTerm.deleteMany({ termId: { $in: ids }, tenantId });
+    const result = await TaxonomyTerm.deleteMany({ _id: { $in: ids }, taxonomyId, tenantId });
+    FuzzyMatchCache.invalidateAll();
+    return result.deletedCount;
+  }
+
   /**
    * Helper: tìm term theo tên (fuzzy, case-insensitive) trong một taxonomy slug
    * Dùng trong ProductService khi import/create product từ text

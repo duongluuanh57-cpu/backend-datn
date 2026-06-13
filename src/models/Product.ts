@@ -20,6 +20,15 @@ export interface IProduct extends Document {
   discountStartDate?: Date | null;
   discountEndDate?: Date | null;
   soldCount?: number;
+  longevity?: string;
+  sillage?: string;
+  durability?: string;
+  scentTrail?: string;
+  style?: string;
+  suitableFor?: string;
+  occasion?: string;
+  season?: string;
+  time?: string;
   tenantId: string;
   createdAt: Date;
   updatedAt: Date;
@@ -43,6 +52,15 @@ const ProductSchema = new Schema<IProduct>(
     discountStartDate: { type: Date, default: null },
     discountEndDate: { type: Date, default: null },
     soldCount: { type: Number, default: 0 },
+    longevity: { type: String, default: '' },
+    sillage: { type: String, default: '' },
+    durability: { type: String, default: '' },
+    scentTrail: { type: String, default: '' },
+    style: { type: String, default: '' },
+    suitableFor: { type: String, default: '' },
+    occasion: { type: String, default: '' },
+    season: { type: String, default: '' },
+    time: { type: String, default: '' },
     tenantId: { type: String, required: true, index: true },
   },
   {

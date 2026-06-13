@@ -3,6 +3,21 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import { HomepageConfig } from '../models/HomepageConfig.ts';
 import { redis } from '../config/redis.ts';
 
+const DEFAULT_NAVBAR_LINKS = [
+  { label: 'Trang chủ', href: '/', order: 0, enabled: true },
+  { label: 'Cửa hàng', href: '/collections', order: 1, enabled: true },
+  { label: 'Bộ sưu tập', href: '/bo-suu-tap', order: 2, enabled: true },
+  { label: 'Bài viết', href: '/blog', order: 3, enabled: true },
+  { label: 'Hỗ trợ', href: '/tro-giup', order: 4, enabled: true },
+  { label: 'Về chúng tôi', href: '/about', order: 5, enabled: true }
+];
+
+const DEFAULT_NAVBAR_LAYOUT = {
+  left: ['logo'],
+  center: ['link-0', 'link-1', 'link-2', 'link-3', 'link-4', 'link-5'],
+  right: ['search', 'cart', 'user']
+};
+
 export class HomepageConfigController {
   static async getConfig(req: FastifyRequest, reply: FastifyReply) {
     try {
@@ -23,6 +38,38 @@ export class HomepageConfigController {
           { tenantId },
           { $set: { productSessionLayout: {} } },
           { upsert: true }
+        );
+        doc = await col.findOne({ tenantId });
+      }
+
+      // Merge missing navbar links into existing docs
+      const existingLinks: any[] = (doc as any)?.navbar?.links || [];
+      const existingLayout = (doc as any)?.navbar?.layout;
+      let needsUpdate = false;
+
+      // Add missing default links
+      const existingHrefs = new Set(existingLinks.map((l: any) => l.href));
+      for (const link of DEFAULT_NAVBAR_LINKS) {
+        if (!existingHrefs.has(link.href)) {
+          existingLinks.push(link);
+          needsUpdate = true;
+        }
+      }
+
+      // Add link-5 to layout center if missing
+      if (
+        existingLayout &&
+        existingLayout.center &&
+        !existingLayout.center.includes('link-5')
+      ) {
+        existingLayout.center.push('link-5');
+        needsUpdate = true;
+      }
+
+      if (needsUpdate) {
+        await col.updateOne(
+          { tenantId },
+          { $set: { 'navbar.links': existingLinks, 'navbar.layout': existingLayout } }
         );
         doc = await col.findOne({ tenantId });
       }

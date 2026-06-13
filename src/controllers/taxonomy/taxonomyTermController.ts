@@ -109,4 +109,22 @@ export class TaxonomyTermController {
       return reply.status(500).send({ success: false, message: err.message });
     }
   }
+
+  /** POST /api/v2/taxonomies/:taxonomyId/terms/bulk-delete */
+  static async bulkRemove(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { taxonomyId } = req.params as { taxonomyId: string };
+      const { ids } = req.body as { ids: string[] };
+      const tenantId = TaxonomyTermController.getTenantId(req);
+
+      if (!ids || ids.length === 0) {
+        return reply.status(400).send({ success: false, message: 'Vui lòng cung cấp danh sách ID để xóa.' });
+      }
+
+      const deleted = await TaxonomyTermService.bulkDelete(taxonomyId, ids, tenantId);
+      return reply.send({ success: true, data: { deletedCount: deleted }, message: `Đã xóa ${deleted} term.` });
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, message: err.message });
+    }
+  }
 }

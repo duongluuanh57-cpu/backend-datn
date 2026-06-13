@@ -20,6 +20,7 @@ export class ProductController {
   static getBulkProducts = ProductListingController.getBulkProducts;
   static suggestProducts = ProductListingController.suggestProducts;
   static getProductById = ProductListingController.getProductById;
+  static getProductImages = ProductListingController.getProductImages;
 
   // Mutation methods
   static updateProduct = ProductMutationController.updateProduct;
