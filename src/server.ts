@@ -1,9 +1,5 @@
 import 'dotenv/config';
 import { buildApp } from './app.ts';
-import { initSentry } from './config/sentry.ts';
-
-// Khởi tạo Sentry đầu tiên để bắt lỗi
-initSentry();
 
 const app = buildApp();
 const PORT = parseInt(process.env.PORT || '4000', 10);
