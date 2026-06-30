@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "cross-env NODE_OPTIONS='--max-old-space-size=2048' tsx watch src/server.ts",
-    "build": "cross-env NODE_OPTIONS='--max-old-space-size=2048' esbuild src/server.ts --bundle --platform=node --target=node22 --outfile=dist/server.js --format=esm --minify --external:sharp --external:dotenv --packages=external",
+    "build": "cross-env NODE_OPTIONS='--max-old-space-size=2048' esbuild src/server.ts --bundle --platform=node --target=node22 --outfile=dist/server.js --format=esm --minify --external:sharp --external:dotenv --packages=external && node -e \"const{cpSync}=require('fs');cpSync('src/views','dist/views',{recursive:true})\"",
     "start": "node dist/server.js",
     "test": "vitest run",
     "clean": "node -e \"const fs = require('fs'); if (fs.existsSync('dist')) fs.rmSync('dist', { recursive: true, force: true }); console.log('🧹 Cleaned dist folder')\""
