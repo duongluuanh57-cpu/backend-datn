@@ -1,4 +1,4 @@
-﻿import type { FastifyRequest, FastifyReply } from 'fastify';
+import type { FastifyRequest, FastifyReply } from 'fastify';
 import { AuthService } from '../../services/AuthService.ts';
 
 const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
@@ -24,7 +24,7 @@ async function verifyTurnstile(token: string, ip: string): Promise<boolean> {
 }
 
 function getFrontendUrl(): string {
-  return process.env.FRONTEND_URL || 'http://localhost:3000';
+  return process.env.FRONTEND_URL || 'https://frontend-datn-tau.vercel.app';
 }
 
 export class AuthPageController {
@@ -42,11 +42,11 @@ export class AuthPageController {
   }
 
   static async getLoginPage(request: FastifyRequest, reply: FastifyReply) {
-    return reply.view('auth.ejs', { mode: 'login', turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || '' });
+    return reply.view('auth.ejs', { mode: 'login', turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || '', frontendUrl: getFrontendUrl() });
   }
 
   static async getRegisterPage(request: FastifyRequest, reply: FastifyReply) {
-    return reply.view('auth.ejs', { mode: 'register', turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || '' });
+    return reply.view('auth.ejs', { mode: 'register', turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || '', frontendUrl: getFrontendUrl() });
   }
 
   static async loginPageAction(request: FastifyRequest, reply: FastifyReply) {
