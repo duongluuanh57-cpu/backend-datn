@@ -1,4 +1,4 @@
-import { ProductSEO } from '../models/ProductSEO.ts';
+import { Product } from '../models/Product.ts';
 import { generateEmbedding } from './ai/aiEmbedding.ts';
 
 export interface VectorSearchResult {
@@ -25,13 +25,13 @@ export class VectorSearchService {
   ): Promise<VectorSearchResult[]> {
     const embedding = await generateEmbedding(queryText);
 
-    const results = await ProductSEO.aggregate<VectorSearchResult>([
+    const results = await Product.aggregate<VectorSearchResult>([
       {
         $vectorSearch: {
           index: VECTOR_INDEX,
           queryVector: embedding,
           path: 'embedding',
-          numCandidates: Math.max(limit * 10, 50),
+          numCandidates: Math.max(limit * 5, 30),
           limit,
           filter: { tenantId },
         },
@@ -39,17 +39,8 @@ export class VectorSearchService {
       { $addFields: { vectorScore: { $meta: 'vectorSearchScore' } } },
       {
         $lookup: {
-          from: 'products',
-          localField: 'productId',
-          foreignField: '_id',
-          as: 'product',
-        },
-      },
-      { $unwind: { path: '$product', preserveNullAndEmptyArrays: true } },
-      {
-        $lookup: {
           from: 'brands',
-          localField: 'product.brandId',
+          localField: 'brandId',
           foreignField: '_id',
           as: 'brandData',
         },
@@ -57,16 +48,16 @@ export class VectorSearchService {
       { $unwind: { path: '$brandData', preserveNullAndEmptyArrays: true } },
       {
         $project: {
-          _id: '$product._id',
-          name: '$product.name',
-          price: { $ifNull: ['$product.price', 0] },
-          description: { $ifNull: ['$product.description', ''] },
+          _id: 1,
+          name: 1,
+          price: 1,
+          description: { $ifNull: ['$description', ''] },
           brand: '$brandData.name',
-          brandId: '$product.brandId',
-          image: '$product.image',
-          variants: { $ifNull: ['$product.variants', []] },
-          rating: { $ifNull: ['$product.rating', 0] },
-          soldCount: { $ifNull: ['$product.soldCount', 0] },
+          brandId: 1,
+          image: 1,
+          variants: { $ifNull: ['$variants', []] },
+          rating: { $ifNull: ['$rating', 0] },
+          soldCount: { $ifNull: ['$soldCount', 0] },
           vectorScore: 1,
         },
       },

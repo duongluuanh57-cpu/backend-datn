@@ -1,18 +1,35 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { ProductService } from '../../services/ProductService.ts';
+import { Product } from '../../models/Product.ts';
 
 export class ProductMutationController {
   /**
    * PATCH /api/products/:id
+   * Kèm auto-switch: nếu sản phẩm đủ thông tin → isSupplemented = true, status = 'active'
    */
   static async updateProduct(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       const productData = req.body as any;
 
       const product = await ProductService.updateProduct(id, productData, tenantId);
       if (!product) return reply.status(404).send({ success: false, message: 'Không tìm thấy sản phẩm để cập nhật' });
+
+      // ── Auto-switch: kiểm tra đủ thông tin → isSupplemented + status ──
+      const updated = await Product.findById(id).populate('variants').lean();
+      if (updated) {
+        const isFull = !!(updated.name && updated.description && updated.description.length > 50 && updated.brandId && updated.image && updated.variants && updated.variants.length > 0 && updated.categories && updated.categories.length >= 2);
+        if (isFull && (!updated.isSupplemented || updated.status !== 'active')) {
+          await Product.updateOne({ _id: id, tenantId }, { $set: { isSupplemented: true, status: 'active' } });
+          return reply.status(200).send({
+            success: true,
+            data: { ...updated, isSupplemented: true, status: 'active' },
+            autoActivated: true,
+            message: '✅ Sản phẩm đã được bổ sung đầy đủ và tự động kích hoạt!',
+          });
+        }
+      }
 
       return reply.status(200).send({ success: true, data: product });
     } catch (error: any) {
@@ -29,7 +46,7 @@ export class ProductMutationController {
   static async deleteProduct(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
 
       const success = await ProductService.deleteProduct(id, tenantId);
       if (!success) return reply.status(404).send({ success: false, message: 'Không tìm thấy sản phẩm để xóa' });
@@ -49,7 +66,7 @@ export class ProductMutationController {
         return reply.status(400).send({ success: false, message: 'Danh sách ID không hợp lệ' });
       }
 
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
 
       const success = await ProductService.bulkDeleteProducts(ids, tenantId);
       if (!success) return reply.status(404).send({ success: false, message: 'Không thể xóa các sản phẩm' });
@@ -65,7 +82,7 @@ export class ProductMutationController {
    */
   static async createProduct(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       const productData = req.body as any;
 
       const product = await ProductService.createProduct(productData, tenantId);

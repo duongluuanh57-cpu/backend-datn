@@ -1,12 +1,13 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import mongoose from 'mongoose';
 import { Order } from '../../models/Order.ts';
+import { OrderItem } from '../../models/OrderItem.ts';
 import { User } from '../../models/User.ts';
 import { enhanceItemsWithProductData, recalculateTotalAmount, buildDateFilter } from './orderHelpers.ts';
 
 /**
  * GET /api/orders/my-orders
- * Lấy lịch sử mua sắm của user đang đăng nhập
+ * Lay lich su mua sam cua user dang dang nhap
  */
 export async function getMyOrders(req: FastifyRequest, reply: FastifyReply) {
   try {
@@ -14,7 +15,7 @@ export async function getMyOrders(req: FastifyRequest, reply: FastifyReply) {
     if (!userId) {
       return reply.status(401).send({
         success: false,
-        message: 'Vui lòng đăng nhập để tiếp tục',
+        message: 'Vui long dang nhap de tiep tuc',
       });
     }
 
@@ -22,7 +23,7 @@ export async function getMyOrders(req: FastifyRequest, reply: FastifyReply) {
     if (!user) {
       return reply.status(404).send({
         success: false,
-        message: 'Người dùng không tồn tại',
+        message: 'Nguoi dung khong ton tai',
       });
     }
 
@@ -37,15 +38,16 @@ export async function getMyOrders(req: FastifyRequest, reply: FastifyReply) {
     }
 
     const orders = await Order.find(query)
-      .populate('items')
       .sort({ createdAt: -1 })
       .lean();
 
-    for (const order of orders as any[]) {
-      if (order.items) {
-        await enhanceItemsWithProductData(order.items);
-        order.totalAmount = recalculateTotalAmount(order.items);
+    for (const order of orders) {
+      const items = await OrderItem.find({ orderId: order._id, tenantId: order.tenantId }).lean();
+      if (items.length > 0) {
+        await enhanceItemsWithProductData(items);
+        order.totalAmount = recalculateTotalAmount(items);
       }
+      order.items = items;
     }
 
     return reply.status(200).send({ success: true, data: orders });
@@ -65,28 +67,27 @@ export async function getOrderById(req: FastifyRequest, reply: FastifyReply) {
     if (!userId) {
       return reply.status(401).send({
         success: false,
-        message: 'Vui lòng đăng nhập để tiếp tục',
+        message: 'Vui long dang nhap de tiep tuc',
       });
     }
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return reply.status(400).send({ success: false, message: 'Mã đơn hàng không hợp lệ' });
+      return reply.status(400).send({ success: false, message: 'Ma don hang khong hop le' });
     }
 
     const order = await Order.findOne({
       _id: new mongoose.Types.ObjectId(id),
       userId: new mongoose.Types.ObjectId(userId),
-    })
-      .populate('items')
-      .lean();
+    }).lean();
 
     if (!order) {
-      return reply.status(404).send({ success: false, message: 'Không tìm thấy đơn hàng của bạn' });
+      return reply.status(404).send({ success: false, message: 'Khong tim thay don hang cua ban' });
     }
 
-    const items = (order as any).items || [];
+    const items = await OrderItem.find({ orderId: order._id, tenantId: order.tenantId }).lean();
     await enhanceItemsWithProductData(items);
-    (order as any).totalAmount = recalculateTotalAmount(items);
+    order.totalAmount = recalculateTotalAmount(items);
+    order.items = items;
 
     return reply.status(200).send({ success: true, data: order });
   } catch (error: any) {

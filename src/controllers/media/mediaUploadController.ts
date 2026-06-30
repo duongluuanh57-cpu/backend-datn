@@ -18,10 +18,11 @@ export class MediaUploadController {
       let filename = 'upload';
       let maxWidth = 1920;
       let quality = 90;
+      let productSlug: string | undefined;
 
       // Extract folder from query parameters first (e.g. ?folder=products)
-      const query = req.query as { folder?: string };
-      let folder = query.folder || 'image';
+      const query = req.query as { folder?: string; productSlug?: string; subIndex?: string };
+      let folder = query.folder || 'media';
 
       const parts = req.parts();
       for await (const part of parts) {
@@ -38,6 +39,9 @@ export class MediaUploadController {
           if (part.fieldname === 'folder' && part.value) {
             folder = part.value as string;
           }
+          if (part.fieldname === 'productSlug' && part.value) {
+            productSlug = part.value as string;
+          }
         }
       }
 
@@ -48,12 +52,24 @@ export class MediaUploadController {
         });
       }
 
-      const result = await ImageService.compressAndUpload(fileBuffer, {
-        maxWidth,
-        quality,
-        name: filename,
-        folder
-      });
+      let result: any;
+
+      // Nếu upload vào products/ → dùng pipeline sharpen + upscale
+      if (folder.startsWith('products') && productSlug) {
+        const subIndexStr = query.subIndex;
+        const subIndex = subIndexStr !== undefined ? clampInt(subIndexStr, 0, 0, 20) : undefined;
+        result = await ImageService.uploadProductImage(fileBuffer, {
+          productSlug,
+          subIndex: subIndex ?? null,
+        });
+      } else {
+        result = await ImageService.compressAndUpload(fileBuffer, {
+          maxWidth,
+          quality,
+          name: filename,
+          folder,
+        });
+      }
 
       await Media.create({
         url: result.url,
@@ -61,7 +77,7 @@ export class MediaUploadController {
         originalBytes: result.originalBytes,
         compressedBytes: result.compressedBytes,
         filename,
-        tenantId: (req as any).user?.tenantId || 'default-tenant',
+        tenantId: (req as any).user?.tenantId || 'default',
       }).catch((err) => {
         console.error('[Media] Failed to save media record:', err);
       });
@@ -129,7 +145,7 @@ export class MediaUploadController {
         originalBytes: result.originalBytes,
         compressedBytes: result.compressedBytes,
         filename,
-        tenantId: (req as any).user?.tenantId || 'default-tenant',
+        tenantId: (req as any).user?.tenantId || 'default',
       }).catch((err) => {
         console.error('[Media] Failed to save media record:', err);
       });

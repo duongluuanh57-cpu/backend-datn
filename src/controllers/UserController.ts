@@ -77,7 +77,7 @@ export class UserController {
       const allowedFields = [
         'username', 'email', 'fullName', 'phoneNumber', 'gender',
         'address', 'province', 'district',
-        'role', 'memberTier', 'status', 'twoFactorEnabled',
+        'role', 'memberTier', 'status',
       ];
       const data: Record<string, any> = {};
       for (const field of allowedFields) {

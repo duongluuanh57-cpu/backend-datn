@@ -9,7 +9,7 @@ export class BrandListingController {
    */
   static async getAllBrands(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       const query = req.query as { page?: string; limit?: string; search?: string; origin?: string };
 
       // Backward compatible: không có page thì trả full list
@@ -39,7 +39,7 @@ export class BrandListingController {
    */
   static async getBrandOrigins(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       const origins = await BrandService.getBrandOrigins(tenantId);
 
       return reply.status(200).send({
@@ -60,7 +60,7 @@ export class BrandListingController {
   static async getBrandById(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
 
       const brand = await BrandService.getBrandById(id, tenantId);
       if (!brand) {

@@ -19,17 +19,6 @@ export function parseSizes(sizeStr: string): { size: string; price: number }[] {
   }).filter(item => item.size);
 }
 
-// Helper to find taxonomy term by name — delegates to TaxonomyTermService
-import { TaxonomyTermService } from '../TaxonomyTermService.ts';
-
-export async function findTaxonomyOnly(
-  name: string,
-  type: 'segment' | 'scent_group' | 'concentration' | 'category',
-  tenantId: string
-): Promise<any | null> {
-  return TaxonomyTermService.findByName(name, type, tenantId);
-}
-
 // Resolve category names from multiple sources (old + new format)
 export function resolveCategoryNames(
   product: any,

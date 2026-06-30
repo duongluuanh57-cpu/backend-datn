@@ -1,16 +1,15 @@
 import mongoose, { Document, Schema } from 'mongoose';
 import { multiTenancyPlugin } from '../utils/multiTenancyPlugin.ts';
 
-export type PaymentMethod = 'cod' | 'bank_transfer' | 'credit_card' | 'momo' | 'zalopay';
 export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded';
 
 export interface IPayment extends Document {
   tenantId: string;
-  orderId: mongoose.Types.ObjectId; // Reference to Order
-  method: PaymentMethod;
-  amount: number;              // Tổng tiền đơn hàng
+  orderId: mongoose.Types.ObjectId;
+  method: string;
   status: PaymentStatus;
-  transactionCode?: string;    // Mã giao dịch từ payment gateway
+  transactionCode?: string;
+  txnRef?: string;
   paidAt?: Date;
   refundedAt?: Date;
   createdAt: Date;
@@ -21,12 +20,7 @@ const PaymentSchema = new Schema<IPayment>(
   {
     tenantId: { type: String, required: true, index: true },
     orderId: { type: Schema.Types.ObjectId, ref: 'Order', required: true, index: true },
-    method: {
-      type: String,
-      required: true,
-      enum: ['cod', 'bank_transfer', 'credit_card', 'momo', 'zalopay'],
-    },
-    amount: { type: Number, required: true },
+    method: { type: String, required: true },
     status: {
       type: String,
       enum: ['pending', 'paid', 'failed', 'refunded'],
@@ -34,6 +28,7 @@ const PaymentSchema = new Schema<IPayment>(
       index: true,
     },
     transactionCode: { type: String },
+    txnRef: { type: String, sparse: true },
     paidAt: { type: Date },
     refundedAt: { type: Date },
   },

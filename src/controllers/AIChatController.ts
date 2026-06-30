@@ -7,12 +7,12 @@
  *   - adminChatController.ts  → adminChat
  *   - feedbackController.ts   → handleFeedback
  */
-export { chatStream, supportChat } from './aiChat/chatStreamController.ts';
+export { chatStream } from './aiChat/chatStreamController.ts';
 export { adminChat } from './aiChat/adminChatController.ts';
 export { handleFeedback } from './aiChat/feedbackController.ts';
 
 // Re-import cho backward-compatible class
-import { chatStream as _chatStream, supportChat as _supportChat } from './aiChat/chatStreamController.ts';
+import { chatStream as _chatStream } from './aiChat/chatStreamController.ts';
 import { adminChat as _adminChat } from './aiChat/adminChatController.ts';
 import { handleFeedback as _handleFeedback } from './aiChat/feedbackController.ts';
 
@@ -25,10 +25,6 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 export class AIChatController {
   static async chatStream(req: FastifyRequest, reply: FastifyReply) {
     return _chatStream(req, reply);
-  }
-
-  static async supportChat(req: FastifyRequest, reply: FastifyReply) {
-    return _supportChat(req, reply);
   }
 
   static async adminChat(req: FastifyRequest, reply: FastifyReply) {

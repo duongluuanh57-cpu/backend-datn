@@ -8,6 +8,7 @@ declare module 'fastify' {
     user?: {
       userId: string;
       role: string;
+      tenantId: string;
     };
   }
 }
@@ -30,7 +31,7 @@ export async function authMiddleware(req: FastifyRequest, reply: FastifyReply) {
 
   try {
     const decoded = verifyAccessToken(token);
-    req.user = { userId: decoded.userId, role: decoded.role };
+    req.user = { userId: decoded.userId, role: decoded.role, tenantId: decoded.tenantId || 'default' };
   } catch (err: any) {
     throw new UnauthorizedError(err.message || 'Token không hợp lệ hoặc đã hết hạn');
   }

@@ -1,16 +1,36 @@
+/**
+ * aiEmbedding — Delegate sang aiInteractionService (Vercel AI SDK)
+ * 
+ * Giữ signature cũ để backward compatible
+ */
+import { generateEmbeddingVector } from './aiInteractionService.ts';
 import crypto from 'crypto';
-import { getGeminiClient } from './aiClient.ts';
+import { redis } from '../../config/redis.ts';
 
 /**
  * Generate embedding vector for text, with deterministic fallback
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
+  // Cache embedding trong Redis 1 ngay (cung cau hoi → cung vector)
+  const cacheKey = `embedding:${crypto.createHash('md5').update(text.toLowerCase().trim()).digest('hex')}`;
   try {
-    const client = getGeminiClient();
-    const embeddingModel = client.getGenerativeModel({ model: "gemini-embedding-2" });
-    const result = await embeddingModel.embedContent(text);
-    return result.embedding.values;
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        console.log(`[Embedding] Cache hit for: "${text.substring(0, 40)}..."`);
+        return parsed;
+      }
+    }
+  } catch {} /* ignore */
+
+  try {
+    const vector = await generateEmbeddingVector(text);
+    // Cache 24h
+    try { await redis.set(cacheKey, JSON.stringify(vector), 'EX', 86400); } catch {}
+    return vector;
   } catch (error) {
+    console.warn('⚠️ [Embedding] Using deterministic fallback:', error);
     // Deterministic fallback: generate pseudo-random 768-dim vector from hash
     const hash = crypto.createHash('sha256').update(text).digest();
     const dims = 768;

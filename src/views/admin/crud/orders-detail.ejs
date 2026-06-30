@@ -1,0 +1,63 @@
+<%# Order Detail — client-side fetch %>
+<script>window.__API_TOKEN__='<%= apiToken %>';window.__API_ENDPOINT__='<%= apiEndpoint %>';</script>
+
+<div id="order-detail-app">
+  <div class="stat-card" style="flex-direction:column;align-items:stretch;padding:24px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <h3 style="font-size:18px;font-weight:600;" id="od-title">Đang tải...</h3>
+      <span id="od-status-badge" style="padding:4px 12px;border-radius:12px;font-size:13px;color:#fff;"></span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <div>
+        <h4 style="color:var(--text-muted);font-size:12px;text-transform:uppercase;margin-bottom:8px;">Thông tin khách hàng</h4>
+        <p id="od-customerName"><b>—</b></p>
+        <p id="od-customerPhone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:middle;margin-right:4px;"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg> —</p>
+        <p id="od-customerEmail"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:middle;margin-right:4px;"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg> —</p>
+        <p id="od-customerAddress"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:middle;margin-right:4px;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> —</p>
+      </div>
+      <div>
+        <h4 style="color:var(--text-muted);font-size:12px;text-transform:uppercase;margin-bottom:8px;">Thanh toán</h4>
+        <p id="od-totalAmount">Tổng tiền: <b style="color:#22c55e;">—</b></p>
+        <p id="od-paymentMethod">Phương thức: —</p>
+        <p id="od-paymentStatus">Trạng thái TT: —</p>
+      </div>
+    </div>
+    <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px;">
+      <p id="od-createdAt" style="color:var(--text-muted);font-size:12px;">Ngày tạo: —</p>
+      <p id="od-updatedAt" style="color:var(--text-muted);font-size:12px;">Cập nhật: —</p>
+    </div>
+    <div style="margin-top:16px;">
+      <a href="/admin/orders" style="color:var(--accent);text-decoration:none;font-size:14px;">← Quay lại danh sách</a>
+    </div>
+  </div>
+</div>
+
+<script>
+var COLORS = { pending:'#f59e0b', processing:'#3b82f6', shipped:'#8b5cf6', delivered:'#22c55e', cancelled:'#ef4444' };
+var LABELS = { pending:'Chờ xử lý', processing:'Đang xử lý', shipped:'Đang giao', delivered:'Đã giao', cancelled:'Đã hủy' };
+
+fetch(window.__API_ENDPOINT__, {
+  headers: { 'Authorization': 'Bearer ' + window.__API_TOKEN__ }
+})
+.then(function(r) { return r.json(); })
+.then(function(res) {
+  if (!res.success || !res.data) { document.getElementById('od-title').textContent = 'Không tìm thấy đơn hàng'; return; }
+  var o = res.data;
+  document.getElementById('od-title').textContent = 'Đơn hàng #' + o._id;
+  var badge = document.getElementById('od-status-badge');
+  badge.style.background = COLORS[o.status] || '#334155';
+  badge.textContent = LABELS[o.status] || o.status;
+  document.getElementById('od-customerName').innerHTML = '<b>' + (o.customerName || '—') + '</b>';
+  document.getElementById('od-customerPhone').textContent = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:middle;margin-right:4px;"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg> ' + (o.customerPhone || '—');
+  document.getElementById('od-customerEmail').textContent = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:middle;margin-right:4px;"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg> ' + (o.customerEmail || '—');
+  document.getElementById('od-customerAddress').textContent = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:middle;margin-right:4px;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> ' + (o.customerAddress || '—');
+  document.getElementById('od-totalAmount').innerHTML = 'Tổng tiền: <b style="color:#22c55e;">' + ((o.totalAmount || 0).toLocaleString('vi-VN')) + 'đ</b>';
+  document.getElementById('od-paymentMethod').textContent = 'Phương thức: ' + (o.paymentMethod || '—');
+  document.getElementById('od-paymentStatus').textContent = 'Trạng thái TT: ' + (o.paymentStatus || '—');
+  document.getElementById('od-createdAt').textContent = 'Ngày tạo: ' + (o.createdAt ? new Date(o.createdAt).toLocaleString('vi-VN') : '—');
+  document.getElementById('od-updatedAt').textContent = 'Cập nhật: ' + (o.updatedAt ? new Date(o.updatedAt).toLocaleString('vi-VN') : '—');
+})
+.catch(function() {
+  document.getElementById('od-title').textContent = 'Lỗi kết nối';
+});
+</script>

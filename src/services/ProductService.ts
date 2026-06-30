@@ -8,7 +8,7 @@
  *   - productQueryService.ts      → ProductQueryService (getNewProducts, getLimitedProducts, getTrendingProducts, getSaleProducts, getAllProducts, getProductById)
  *   - productMutationService.ts   → ProductMutationService (createProduct, updateProduct, deleteProduct, bulkDeleteProducts)
  */
-export { slugify, parseSizes, findTaxonomyOnly, resolveCategoryNames } from './product/productHelpers.ts';
+export { slugify, parseSizes, resolveCategoryNames } from './product/productHelpers.ts';
 export { formatMultipleProducts } from './product/productFormatterService.ts';
 export { ProductQueryService } from './product/productQueryService.ts';
 export { ProductMutationService } from './product/productMutationService.ts';

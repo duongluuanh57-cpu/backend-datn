@@ -7,9 +7,33 @@ type CacheEntry<T> = {
 export class FuzzyMatchCache {
   private static store = new Map<string, CacheEntry<any>>();
   private static TTL = 5 * 60 * 1000;
+  private static MAX_SIZE = 200; // Giới hạn số lượng cache entry để tránh tràn RAM
 
   static normalize(s: string): string {
     return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  }
+
+  /** Dọn dẹp entry hết hạn và giới hạn kích thước */
+  private static evictIfNeeded(): void {
+    const now = Date.now();
+    // Xóa entry hết hạn
+    for (const [key, entry] of this.store) {
+      if (now - entry.timestamp >= this.TTL) {
+        this.store.delete(key);
+      }
+    }
+    // Nếu vẫn vượt giới hạn, xóa entry cũ nhất (LRU-style)
+    if (this.store.size >= this.MAX_SIZE) {
+      let oldestKey = '';
+      let oldestTime = Infinity;
+      for (const [key, entry] of this.store) {
+        if (entry.timestamp < oldestTime) {
+          oldestTime = entry.timestamp;
+          oldestKey = key;
+        }
+      }
+      if (oldestKey) this.store.delete(oldestKey);
+    }
   }
 
   static async getOrFetch<T>(
@@ -28,6 +52,7 @@ export class FuzzyMatchCache {
       lookup.set(this.normalize(nameAccessor(item)), item);
     }
 
+    this.evictIfNeeded();
     this.store.set(key, { items, lookup, timestamp: Date.now() });
     return { items, lookup };
   }

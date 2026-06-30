@@ -1,7 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { AuthService } from '../../services/AuthService.ts';
-import { PostHogService } from '../../services/PostHogService.ts';
-import { verifyRefreshToken, generateTokens } from '../../utils/auth.ts';
+import { verifyAccessToken, verifyRefreshToken, generateTokens } from '../../utils/auth.ts';
 import { redis } from '../../config/redis.ts';
 import { UnauthorizedError } from '../../utils/errors.ts';
 import { UserRepository } from '../../repositories/UserRepository.ts';
@@ -11,12 +10,6 @@ export class AuthSessionController {
     const data = request.body as any;
     const tenantId = (request.headers['x-tenant-id'] as string) || 'default';
     const result = await AuthService.register(data, tenantId);
-    
-    // PostHog Tracking: Đăng ký thành công
-    PostHogService.capture(result.user.id.toString(), 'user_registered', {
-      method: 'email',
-      tenantId
-    });
 
     return reply.status(201).send({
       success: true,
@@ -32,11 +25,6 @@ export class AuthSessionController {
       userAgent: request.headers['user-agent'] || 'unknown'
     };
     const result = await AuthService.login(data, metadata);
-
-    // PostHog Tracking: Đăng nhập thành công
-    PostHogService.capture(result.user.id.toString(), 'user_logged_in', {
-      ...metadata
-    });
 
     return reply.send({
       success: true,
@@ -64,7 +52,7 @@ export class AuthSessionController {
     const user = await UserRepository.findById(userId);
     if (!user) throw new UnauthorizedError('Người dùng không tồn tại');
 
-    const tokens = generateTokens(userId, user.role);
+    const tokens = generateTokens(userId, user.role, false, user.tenantId || 'default');
 
     return reply.send({
       success: true,
@@ -74,9 +62,28 @@ export class AuthSessionController {
   }
 
   /**
-   * Đăng xuất — Đưa Refresh Token vào Blacklist trong Redis
-   * POST /api/auth/logout
+   * Nhận token từ query param, validate, set cookie admin_token,
+   * redirect sang /admin. Dùng GET + top-level navigation
+   * để tránh CORS và SameSite cookie issue.
+   * GET /api/auth/set-admin-session?token=...
    */
+  static async setAdminSession(request: FastifyRequest, reply: FastifyReply) {
+    const { token } = request.query as { token: string };
+    if (!token) {
+      return reply.redirect('/api/auth/login');
+    }
+    try {
+      const decoded = verifyAccessToken(token);
+      if (decoded.role !== 'ADMIN' && decoded.role !== 'SUBADMIN') {
+        return reply.redirect('/api/auth/login');
+      }
+      reply.header('Set-Cookie', `admin_token=${encodeURIComponent(token)}; Path=/; SameSite=Lax; HttpOnly`);
+      return reply.redirect('/admin');
+    } catch {
+      return reply.redirect('/api/auth/login');
+    }
+  }
+
   static async logout(request: FastifyRequest, reply: FastifyReply) {
     const { refreshToken } = request.body as { refreshToken: string };
     if (!refreshToken) throw new UnauthorizedError('Refresh token là bắt buộc');

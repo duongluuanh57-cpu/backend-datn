@@ -18,36 +18,12 @@ export async function aiRoutes(app: FastifyInstance) {
     handler: AICoreController.generate,
   });
 
-  // POST /api/ai/generate-product - AI tự động viết thông tin sản phẩm và tự động điền form
-  server.post('/generate-product', {
-    schema: {
-      body: AIGenerateNameSchema,
-    },
-    handler: AICatalogController.generateProduct,
-  });
-
   // POST /api/ai/generate-brand - AI tự động viết câu chuyện thương hiệu và tự động điền form
   server.post('/generate-brand', {
     schema: {
       body: AIGenerateNameSchema,
     },
     handler: AICatalogController.generateBrand,
-  });
-
-  // POST /api/ai/agent/run - Skill 13
-  server.post('/agent/run', {
-    schema: {
-      body: AIPromptSchema,
-    },
-    handler: AICoreController.runAgent,
-  });
-
-  // POST /api/ai/support/chat - Hỗ trợ khách hàng đa tác nhân + Eval
-  server.post('/support/chat', {
-    schema: {
-      body: AIPromptSchema,
-    },
-    handler: AIChatController.supportChat,
   });
 
   // POST /api/ai/chat - Streaming Vercel AI SDK (dành cho user)
@@ -59,11 +35,6 @@ export async function aiRoutes(app: FastifyInstance) {
   server.post('/admin/chat', {
     preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
     handler: AIChatController.adminChat,
-  });
-
-  // POST /api/ai/autocomplete - Gợi ý tự động hoàn thành thời gian thực
-  server.post('/autocomplete', {
-    handler: AICatalogController.autocomplete,
   });
 
   // POST /api/ai/suggest-price - Gợi ý giá thị trường + % cộng thêm

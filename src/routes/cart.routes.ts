@@ -1,0 +1,28 @@
+import type { FastifyInstance } from 'fastify';
+import { CartController } from '../controllers/CartController.ts';
+import { authMiddleware } from '../middleware/authMiddleware.ts';
+
+export async function cartRoutes(app: FastifyInstance) {
+  app.addHook('preHandler', authMiddleware);
+
+  // GET /api/cart — Lấy giỏ hàng
+  app.get('/', CartController.getCart);
+
+  // POST /api/cart/add — Thêm sản phẩm vào giỏ
+  app.post('/add', CartController.addToCart);
+
+  // PATCH /api/cart/item — Cập nhật số lượng
+  app.patch('/item', CartController.updateCartItem);
+
+  // DELETE /api/cart/item/:productId — Xóa 1 sản phẩm
+  app.delete('/item/:productId', CartController.removeCartItem);
+
+  // DELETE /api/cart — Xóa toàn bộ giỏ
+  app.delete('/', CartController.clearCart);
+
+  // POST /api/cart/apply-voucher — Áp dụng mã giảm giá
+  app.post('/apply-voucher', CartController.applyVoucher);
+
+  // POST /api/cart/remove-voucher — Hủy mã giảm giá
+  app.post('/remove-voucher', CartController.removeVoucher);
+}

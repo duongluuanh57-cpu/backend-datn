@@ -50,7 +50,6 @@ export async function getAllOrdersForAdmin(req: FastifyRequest, reply: FastifyRe
 
     const [orders, total] = await Promise.all([
       Order.find(filter)
-        .populate('items')
         .populate('userId', 'username email avatar')
         .sort({ createdAt: -1 })
         .skip(skip)
@@ -59,11 +58,13 @@ export async function getAllOrdersForAdmin(req: FastifyRequest, reply: FastifyRe
       Order.countDocuments(filter),
     ]);
 
-    for (const order of orders as any[]) {
-      if (order.items) {
-        await enhanceItemsWithProductData(order.items);
-        order.totalAmount = recalculateTotalAmount(order.items);
+    for (const order of orders) {
+      const items = await OrderItem.find({ orderId: order._id, tenantId }).lean();
+      if (items.length > 0) {
+        await enhanceItemsWithProductData(items);
+        order.totalAmount = recalculateTotalAmount(items);
       }
+      order.items = items;
     }
 
     return reply.status(200).send({
@@ -96,7 +97,6 @@ export async function getOrderByIdForAdmin(req: FastifyRequest, reply: FastifyRe
       _id: new mongoose.Types.ObjectId(id),
       tenantId,
     })
-      .populate('items')
       .populate('userId', 'username email avatar phoneNumber fullName')
       .lean();
 
@@ -104,9 +104,10 @@ export async function getOrderByIdForAdmin(req: FastifyRequest, reply: FastifyRe
       return reply.status(404).send({ success: false, message: 'Không tìm thấy đơn hàng' });
     }
 
-    const items = (order as any).items || [];
+    const items = await OrderItem.find({ orderId: order._id, tenantId }).lean();
     await enhanceItemsWithProductData(items);
-    (order as any).totalAmount = recalculateTotalAmount(items);
+    order.totalAmount = recalculateTotalAmount(items);
+    order.items = items;
 
     return reply.status(200).send({ success: true, data: order });
   } catch (error: any) {

@@ -4,6 +4,7 @@ import { hashPassword, comparePassword } from '../../utils/auth.ts';
 import { UnauthorizedError } from '../../utils/errors.ts';
 import { UserRepository } from '../../repositories/UserRepository.ts';
 import { User } from '../../models/User.ts';
+import { UserAddress } from '../../models/UserAddress.ts';
 import { Order } from '../../models/Order.ts';
 import mongoose from 'mongoose';
 
@@ -61,6 +62,9 @@ export class AuthProfileController {
         fullName?: string;
         phoneNumber?: string;
         gender?: string;
+        address?: string;
+        province?: string;
+        district?: string;
       };
       const userId = (request as any).user?.userId;
       if (!userId) throw new UnauthorizedError('Vui lòng đăng nhập');
@@ -93,6 +97,9 @@ export class AuthProfileController {
       if (body.fullName !== undefined) updateData.fullName = body.fullName.trim();
       if (body.phoneNumber !== undefined) updateData.phoneNumber = body.phoneNumber.trim();
       if (body.gender !== undefined) updateData.gender = body.gender;
+      if (body.address !== undefined) updateData.address = body.address.trim();
+      if (body.province !== undefined) updateData.province = body.province.trim();
+      if (body.district !== undefined) updateData.district = body.district.trim();
 
       if (Object.keys(updateData).length === 0) {
         return reply.status(400).send({ success: false, message: 'Không có thông tin nào để cập nhật' });
@@ -130,16 +137,13 @@ export class AuthProfileController {
       let user = await User.findById(userId).lean();
       if (!user) throw new UnauthorizedError('Người dùng không tồn tại');
 
-      // Compute totalSpent từ các order đã delivered nếu chưa có
-      let totalSpent = (user as any).totalSpent || 0;
-      if (!totalSpent) {
-        const result = await Order.aggregate([
-          { $match: { userId: new mongoose.Types.ObjectId(userId), status: 'delivered' } },
-          { $group: { _id: null, total: { $sum: '$totalAmount' } } },
-        ]);
-        totalSpent = (result[0]?.total || 0);
-        await User.findByIdAndUpdate(userId, { totalSpent });
-      }
+      // Luôn recalculate totalSpent từ orders đã delivered (real-time)
+      const result = await Order.aggregate([
+        { $match: { userId: new mongoose.Types.ObjectId(userId), status: 'delivered' } },
+        { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+      ]);
+      const totalSpent = result[0]?.total || 0;
+      await User.findByIdAndUpdate(userId, { totalSpent });
 
       const tier = computeMemberTier(totalSpent);
       if ((user as any).memberTier !== tier) {
@@ -148,11 +152,17 @@ export class AuthProfileController {
       }
       (user as any).totalSpent = totalSpent;
 
+      // Lấy địa chỉ mặc định của user
+      const defaultAddress = await UserAddress.findOne({ userId: new mongoose.Types.ObjectId(userId), isDefault: true }).lean();
+
       const { passwordHash, ...safeUser } = user as any;
 
       return reply.send({
         success: true,
-        data: safeUser
+        data: {
+          ...safeUser,
+          defaultAddress: defaultAddress || null,
+        }
       });
     } catch (err: any) {
       return reply.status(500).send({ success: false, message: err.message });

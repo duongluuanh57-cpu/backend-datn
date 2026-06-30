@@ -7,7 +7,7 @@ export class MediaLibraryController {
    */
   static async listMedia(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       const query = req.query as { page?: string; limit?: string };
       const page = Math.max(1, parseInt(query.page || '1', 10) || 1);
       const limit = Math.min(100, Math.max(1, parseInt(query.limit || '50', 10) || 50));

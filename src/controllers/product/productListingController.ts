@@ -1,6 +1,8 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { ProductService } from '../../services/ProductService.ts';
 import { ProductImage } from '../../models/ProductImage.ts';
+import { Product } from '../../models/Product.ts';
+import { Brand } from '../../models/Brand.ts';
 
 export class ProductListingController {
   /**
@@ -8,7 +10,7 @@ export class ProductListingController {
    */
   static async getNewProducts(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       const products = await ProductService.getNewProducts(tenantId);
       return reply.status(200).send({ success: true, data: products });
     } catch (error: any) {
@@ -21,7 +23,7 @@ export class ProductListingController {
    */
   static async getLimitedProducts(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       const products = await ProductService.getLimitedProducts(tenantId);
       return reply.status(200).send({ success: true, data: products });
     } catch (error: any) {
@@ -34,7 +36,7 @@ export class ProductListingController {
    */
   static async getTrendingProducts(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       const products = await ProductService.getTrendingProducts(tenantId);
       return reply.status(200).send({ success: true, data: products });
     } catch (error: any) {
@@ -47,7 +49,7 @@ export class ProductListingController {
    */
   static async getPublicProducts(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       const query = req.query as {
         type?: string;
         brand?: string;
@@ -93,7 +95,7 @@ export class ProductListingController {
    */
   static async getSaleProducts(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       const products = await ProductService.getSaleProducts(tenantId);
       return reply.status(200).send({ success: true, data: products });
     } catch (error: any) {
@@ -107,7 +109,7 @@ export class ProductListingController {
    */
   static async getAllProducts(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       const query = req.query as {
         page?: string;
         limit?: string;
@@ -141,7 +143,7 @@ export class ProductListingController {
    */
   static async suggestProducts(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       const { q, limit } = req.query as { q?: string; limit?: string };
       const products = await ProductService.suggestProducts(
         tenantId,
@@ -159,7 +161,7 @@ export class ProductListingController {
    */
   static async getBulkProducts(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       const query = req.query as { ids?: string };
       if (!query.ids) {
         return reply.status(400).send({ success: false, message: 'Missing ids query parameter.' });
@@ -181,7 +183,8 @@ export class ProductListingController {
   static async getProductById(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const queryTenantId = (req.query as any).tenantId;
+      const tenantId = (req as any).user?.tenantId || queryTenantId || 'default';
       const product = await ProductService.getProductById(id, tenantId);
       if (!product) return reply.status(404).send({ success: false, message: 'Không tìm thấy sản phẩm' });
       return reply.status(200).send({ success: true, data: product });
@@ -196,9 +199,100 @@ export class ProductListingController {
   static async getProductImages(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       const images = await ProductImage.find({ productId: id, tenantId }).sort({ createdAt: 1 });
       return reply.status(200).send({ success: true, data: images.map(img => img.url) });
+    } catch (error: any) {
+      return reply.status(500).send({ success: false, message: error.message });
+    }
+  }
+
+  /**
+   * POST /api/products/:id/track-view
+   * Increments viewCount on a product (Redis-style, direct MongoDB increment)
+   */
+  static async trackProductView(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { id } = req.params as { id: string };
+      const result = await Product.updateOne({ _id: id }, { $inc: { viewCount: 1 } });
+      return reply.status(200).send({ success: true, modified: result.modifiedCount > 0 });
+    } catch (error: any) {
+      return reply.status(500).send({ success: false, message: error.message });
+    }
+  }
+
+  /**
+   * GET /api/products/top-brands-by-views
+   * Aggregates product viewCount by brand, returns top brands sorted by total views
+   */
+  static async getTopBrandsByViews(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const tenantId = (req as any).user?.tenantId || 'default';
+      const query = req.query as { limit?: string };
+      const limit = query.limit ? Math.min(parseInt(query.limit, 10), 50) : 20;
+
+      const agg = await Product.aggregate([
+        { $match: { tenantId } },
+        { $group: { _id: '$brandId', totalViews: { $sum: '$viewCount' }, productCount: { $sum: 1 } } },
+        { $sort: { totalViews: -1 } },
+        { $limit: limit },
+      ]);
+
+      const brandIds = agg.map(a => a._id).filter(Boolean);
+      const brands = await Brand.find({ _id: { $in: brandIds } }).select('name').lean() as any[];
+      const brandNameMap = new Map<string, string>();
+      for (const b of brands) brandNameMap.set(b._id.toString(), b.name);
+
+      const data = agg.map(a => ({
+        brandId: a._id,
+        brandName: brandNameMap.get(a._id?.toString()) || 'Unknown',
+        totalViews: a.totalViews,
+        productCount: a.productCount,
+      }));
+
+      return reply.status(200).send({ success: true, data });
+    } catch (error: any) {
+      return reply.status(500).send({ success: false, message: error.message });
+    }
+  }
+
+  /**
+   * GET /api/products/needs-supplement
+   * Trả về danh sách sản phẩm cần bổ sung thông tin (isSupplemented: false, status: 'draft')
+   */
+  static async getNeedsSupplement(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const tenantId = (req as any).user?.tenantId || 'default';
+      const products = await Product.find({ tenantId, isSupplemented: false, status: 'draft' })
+        .select('name image brandId description categories variants status isSupplemented')
+        .populate('brandId', 'name')
+        .populate('categories', 'name')
+        .sort({ createdAt: -1 })
+        .lean();
+
+      const data = products.map((p: any) => {
+        const missing: string[] = [];
+        if (!p.description || p.description.length < 50) missing.push('description');
+        if (!p.image) missing.push('image');
+        if (!p.variants || p.variants.length === 0) missing.push('variants');
+        if (!p.brandId) missing.push('brand');
+        if (!p.categories || p.categories.length < 2) missing.push('categories');
+
+        return {
+          _id: p._id,
+          name: p.name,
+          brand: p.brandId?.name || '',
+          image: p.image || '',
+          description: p.description || '',
+          categories: (p.categories || []).map((c: any) => c.name),
+          missing,
+          missingCount: missing.length,
+          isSupplemented: p.isSupplemented,
+          status: p.status,
+        };
+      });
+
+      return reply.status(200).send({ success: true, data, total: data.length });
     } catch (error: any) {
       return reply.status(500).send({ success: false, message: error.message });
     }

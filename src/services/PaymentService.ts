@@ -1,4 +1,44 @@
-import { Payment, type PaymentMethod, type PaymentStatus } from '../models/Payment.ts';
+import { Payment, type PaymentStatus } from '../models/Payment.ts';
+import { PaymentMethod } from '../models/PaymentMethod.ts';
+
+// ─── Payment Method CRUD ───
+
+export class PaymentMethodService {
+  static async getAll(tenantId: string, onlyActive = false) {
+    const filter: any = { tenantId };
+    if (onlyActive) filter.isActive = true;
+    return PaymentMethod.find(filter).sort({ sortOrder: 1 }).lean();
+  }
+
+  static async getById(id: string, tenantId: string) {
+    return PaymentMethod.findOne({ _id: id, tenantId }).lean();
+  }
+
+  static async create(data: { name: string; code: string; icon?: string; sortOrder?: number }, tenantId: string) {
+    return PaymentMethod.create({
+      tenantId,
+      name: data.name,
+      code: data.code,
+      icon: data.icon || '',
+      sortOrder: data.sortOrder ?? 0,
+    });
+  }
+
+  static async update(id: string, data: { name?: string; icon?: string; isActive?: boolean; sortOrder?: number }, tenantId: string) {
+    return PaymentMethod.findOneAndUpdate(
+      { _id: id, tenantId },
+      { $set: data },
+      { new: true }
+    ).lean();
+  }
+
+  static async delete(id: string, tenantId: string) {
+    const result = await PaymentMethod.deleteOne({ _id: id, tenantId });
+    return result.deletedCount > 0;
+  }
+}
+
+// ─── Payment Transaction CRUD ───
 
 export class PaymentService {
   static async getAll(tenantId: string) {
@@ -10,7 +50,7 @@ export class PaymentService {
 
   static async getById(id: string, tenantId: string) {
     return Payment.findOne({ _id: id, tenantId })
-      .populate({ path: 'orderId', select: 'customerName customerEmail totalAmount status' })
+      .populate({ path: 'orderId', select: 'customerName customerPhone totalAmount status' })
       .lean();
   }
 
@@ -20,36 +60,20 @@ export class PaymentService {
       .lean();
   }
 
-  static async create(data: {
-    orderId: string;
-    method: PaymentMethod;
-    amount: number;
-  }, tenantId: string) {
-    const payment = await Payment.create({
+  static async create(data: { orderId: string; method: string }, tenantId: string) {
+    return Payment.create({
       orderId: data.orderId,
       method: data.method,
-      amount: data.amount,
-      status: 'pending',
       tenantId,
     });
-
-    return payment;
   }
 
   static async markPaid(id: string, transactionCode: string | undefined, tenantId: string) {
-    const payment = await Payment.findOneAndUpdate(
+    return Payment.findOneAndUpdate(
       { _id: id, tenantId },
-      {
-        $set: {
-          status: 'paid' as PaymentStatus,
-          transactionCode: transactionCode || undefined,
-          paidAt: new Date(),
-        },
-      },
+      { $set: { status: 'paid' as PaymentStatus, transactionCode: transactionCode || undefined, paidAt: new Date() } },
       { new: true }
     );
-
-    return payment;
   }
 
   static async markFailed(id: string, tenantId: string) {
@@ -61,18 +85,11 @@ export class PaymentService {
   }
 
   static async markRefunded(id: string, tenantId: string) {
-    const payment = await Payment.findOneAndUpdate(
+    return Payment.findOneAndUpdate(
       { _id: id, tenantId },
-      {
-        $set: {
-          status: 'refunded' as PaymentStatus,
-          refundedAt: new Date(),
-        },
-      },
+      { $set: { status: 'refunded' as PaymentStatus, refundedAt: new Date() } },
       { new: true }
     );
-
-    return payment;
   }
 
   static async delete(id: string, tenantId: string) {

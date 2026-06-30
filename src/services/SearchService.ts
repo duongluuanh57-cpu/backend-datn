@@ -1,18 +1,55 @@
 import mongoose from 'mongoose';
 import { VectorSearchService } from './VectorSearchService.ts';
+import { Brand } from '../models/Brand.ts';
+import { Product } from '../models/Product.ts';
 
+/**
+ * Keyword search — hybrid $text (inverted index) + $regex (prefix autocomplete)
+ * 
+ * Chiến lược:
+ * 1. Dùng $text search trên Product (inverted index) — nhanh, chính xác
+ * 2. Dùng $text search trên Brand (inverted index) — tìm brand
+ * 3. Fallback $regex prefix cho autocomplete (khi gõ từng chữ)
+ * 4. Kết hợp tất cả bằng RRF merge
+ */
 async function runKeywordSearch(query: string, tenantId: string, limit: number) {
-  const queryWords = query.toLowerCase().trim().split(/\s+/).filter(w => w.length >= 2);
+  const cleanQuery = query.toLowerCase().trim();
+  const queryWords = cleanQuery.split(/\s+/).filter(w => w.length >= 2);
   if (queryWords.length === 0) return [];
 
   const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const BUFFER = 2;
+
+  // ── 1. Text search trên Product (inverted index) ──
+  const textSearchProducts = Product.find(
+    { tenantId, $text: { $search: cleanQuery } },
+    { textScore: { $meta: 'textScore' } }
+  )
+    .sort({ textScore: { $meta: 'textScore' }, soldCount: -1 })
+    .limit(limit * BUFFER)
+    .lean()
+    .then((docs: any[]) => docs.map(d => ({ ...d, _source: 'text' as const })))
+    .catch(() => []);
+
+  // ── 2. Text search trên Brand (inverted index) ──
+  const brandTextSearch = Brand.find(
+    { tenantId, $text: { $search: cleanQuery } },
+    { textScore: { $meta: 'textScore' } }
+  )
+    .sort({ textScore: { $meta: 'textScore' } })
+    .select('_id name')
+    .limit(3)
+    .lean()
+    .then((docs: any[]) => docs.map(d => ({ ...d, _source: 'brand' as const })))
+    .catch(() => []);
+
+  // ── 3. $regex prefix cho autocomplete ──
   const nameConditions = queryWords.map(word => ({
     name: { $regex: '^' + escapeRegex(word), $options: 'i' },
   }));
   const brandPattern = queryWords.map(w => '^' + escapeRegex(w)).join('|');
 
-  const BUFFER = 2;
-  return mongoose.connection.db!.collection('products').aggregate([
+  const regexSearch = mongoose.connection.db!.collection('products').aggregate([
     { $match: { tenantId, $or: nameConditions } },
     { $sort: { soldCount: -1, rating: -1 } },
     { $limit: limit * BUFFER },
@@ -21,7 +58,57 @@ async function runKeywordSearch(query: string, tenantId: string, limit: number) 
     { $match: { $or: [...nameConditions, { 'brandData.name': { $regex: brandPattern, $options: 'i' } }] } },
     { $limit: limit },
     { $project: { _id: 1, name: 1, price: 1, description: 1, brand: '$brandData.name', brandId: 1, images: 1, variants: 1, rating: 1, soldCount: 1 } },
-  ]).toArray();
+  ]).toArray().then((docs: any[]) => docs.map(d => ({ ...d, _source: 'regex' as const })));
+
+  // ── Chạy song song ──
+  const [textResults, brandResults, regexResults] = await Promise.all([
+    textSearchProducts,
+    brandTextSearch,
+    regexSearch,
+  ]);
+
+  // ── Nếu có brand match, tìm product theo brandId ──
+  const brandIds = brandResults.map((b: any) => b._id);
+  let brandProductResults: any[] = [];
+  if (brandIds.length > 0) {
+    brandProductResults = await Product.find(
+      { tenantId, brandId: { $in: brandIds } },
+      { textScore: { $meta: 'textScore' } }
+    )
+      .sort({ soldCount: -1, rating: -1 })
+      .limit(limit)
+      .lean()
+      .then((docs: any[]) => docs.map(d => ({ ...d, _source: 'brand' as const })));
+  }
+
+  // ── Format kết quả ──
+  const formatProduct = (p: any) => ({
+    _id: p._id,
+    name: p.name,
+    price: p.price,
+    description: p.description || '',
+    brand: p.brand || (p as any).brandData?.name || '',
+    brandId: p.brandId,
+    images: p.images || [],
+    variants: p.variants || [],
+    rating: p.rating || 0,
+    soldCount: p.soldCount || 0,
+  });
+
+  const allResults = [
+    ...textResults.map(formatProduct),
+    ...brandProductResults.map(formatProduct),
+    ...regexResults.map(formatProduct),
+  ];
+
+  // ── Dedup bằng Map ──
+  const seen = new Map<string, any>();
+  for (const item of allResults) {
+    const id = item._id.toString();
+    if (!seen.has(id)) seen.set(id, item);
+  }
+
+  return Array.from(seen.values()).slice(0, limit);
 }
 
 export class SearchService {

@@ -20,7 +20,7 @@ export class CategoryService {
     options: { page: number; limit: number; search?: string; status?: string }
   ): Promise<{ items: any[]; total: number; page: number; totalPages: number }> {
     const { page, limit, search, status } = options;
-    const query: any = { tenantId };
+    const query: any = {};
 
     if (search) {
       query.name = { $regex: '^' + search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };

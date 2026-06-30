@@ -25,7 +25,58 @@ export class ImageOptimizer {
   }
 
   /**
-   * Tạo Thumbnail nhanh
+   * Tối ưu ảnh SẢN PHẨM — cho phép upscale + sharpen để hiển thị rõ nét trên web
+   * @param inputBuffer - Ảnh gốc
+   * @param maxWidth - Kích thước tối đa (mặc định 1200px)
+   * @param quality - Chất lượng WebP (mặc định 95)
+   */
+  static async optimizeForProduct(
+    inputBuffer: Buffer,
+    maxWidth: number = 1200,
+    quality: number = 95
+  ): Promise<Buffer> {
+    try {
+      return await sharp(inputBuffer)
+        .resize({
+          width: maxWidth,
+          withoutEnlargement: false, // Cho phép upscale ảnh nhỏ
+          fit: 'inside',
+          kernel: 'lanczos3',        // Thuật toán nội suy chất lượng cao
+        })
+        .sharpen({                    // Làm nét cạnh để ảnh sắc hơn
+          sigma: 0.8,
+          m1: 0.5,
+          m2: 0.5,
+        })
+        .webp({ quality })
+        .toBuffer();
+    } catch (error) {
+      console.error('[ImageService Product Optimize Error]', error);
+      throw new Error('Không thể tối ưu hóa ảnh sản phẩm.');
+    }
+  }
+
+  /**
+   * Tạo ảnh Thumbnail cho sản phẩm (card/list view) — nhẹ, sắc nét
+   */
+  static async generateProductThumb(inputBuffer: Buffer, size: number = 400): Promise<Buffer> {
+    try {
+      return await sharp(inputBuffer)
+        .resize(size, size, {
+          fit: 'cover',
+          kernel: 'lanczos3',
+        })
+        .sharpen({ sigma: 0.5, m1: 0.3, m2: 0.3 })
+        .webp({ quality: 85 })
+        .toBuffer();
+    } catch (error) {
+      console.error('[ImageService Product Thumb Error]', error);
+      throw new Error('Không thể tạo ảnh thumbnail sản phẩm.');
+    }
+  }
+
+  /**
+   * Tạo Thumbnail nhanh (dùng chung)
    */
   static async generateThumbnail(inputBuffer: Buffer, size: number = 200): Promise<Buffer> {
     try {

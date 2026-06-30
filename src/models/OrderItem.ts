@@ -10,6 +10,7 @@ export interface IOrderItem extends Document {
   quantity: number;
   price: number;
   image?: string;
+  variantSize?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -24,6 +25,7 @@ const OrderItemSchema = new Schema<IOrderItem>(
     quantity: { type: Number, required: true, min: 1 },
     price: { type: Number, required: true },
     image: { type: String },
+    variantSize: { type: String },
   },
   {
     timestamps: true,
@@ -32,6 +34,7 @@ const OrderItemSchema = new Schema<IOrderItem>(
 );
 
 OrderItemSchema.plugin(multiTenancyPlugin);
+OrderItemSchema.index({ brand: 1, createdAt: -1 });
 
 export const OrderItem =
   mongoose.models.OrderItem ||

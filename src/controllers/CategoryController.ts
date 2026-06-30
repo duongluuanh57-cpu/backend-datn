@@ -4,7 +4,7 @@ import { CategoryService } from '../services/CategoryService.ts';
 export class CategoryController {
   static async getAll(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       const query = req.query as { page?: string; limit?: string; search?: string; status?: string };
 
       if (!query.page) {
@@ -28,7 +28,7 @@ export class CategoryController {
   static async getById(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       const category = await CategoryService.getById(id, tenantId);
       if (!category) return reply.status(404).send({ success: false, message: 'Không tìm thấy category' });
       return reply.status(200).send({ success: true, data: category });
@@ -39,7 +39,7 @@ export class CategoryController {
 
   static async create(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       const body = req.body as { name: string; status?: string; sortOrder?: number };
       if (!body.name?.trim()) {
         return reply.status(400).send({ success: false, message: 'Tên category không được để trống' });
@@ -54,7 +54,7 @@ export class CategoryController {
   static async update(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       const body = req.body as { name?: string; status?: string; sortOrder?: number };
       const category = await CategoryService.update(id, body, tenantId);
       if (!category) return reply.status(404).send({ success: false, message: 'Không tìm thấy category' });
@@ -67,7 +67,7 @@ export class CategoryController {
   static async delete(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       const success = await CategoryService.delete(id, tenantId);
       if (!success) return reply.status(404).send({ success: false, message: 'Không tìm thấy category' });
       return reply.status(200).send({ success: true, message: 'Đã xoá category' });
@@ -82,7 +82,7 @@ export class CategoryController {
       if (!ids || !Array.isArray(ids) || ids.length === 0) {
         return reply.status(400).send({ success: false, message: 'Danh sách ID không hợp lệ' });
       }
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       const success = await CategoryService.bulkDelete(ids, tenantId);
       if (!success) {
         return reply.status(404).send({ success: false, message: 'Không thể xóa các danh mục' });

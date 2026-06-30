@@ -21,6 +21,9 @@ export class ProductController {
   static suggestProducts = ProductListingController.suggestProducts;
   static getProductById = ProductListingController.getProductById;
   static getProductImages = ProductListingController.getProductImages;
+  static trackProductView = ProductListingController.trackProductView;
+  static getTopBrandsByViews = ProductListingController.getTopBrandsByViews;
+  static getNeedsSupplement = ProductListingController.getNeedsSupplement;
 
   // Mutation methods
   static updateProduct = ProductMutationController.updateProduct;

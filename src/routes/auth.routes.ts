@@ -1,31 +1,40 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
+import rateLimit from '@fastify/rate-limit';
 import { AuthController } from '../controllers/AuthController.ts';
+import { AuthPageController } from '../controllers/auth/authPageController.ts';
 import { authMiddleware } from '../middleware/authMiddleware.ts';
 import { RegisterSchema, LoginSchema, ChangePasswordSchema } from '../types/user.types.ts';
 
 export async function authRoutes(app: FastifyInstance) {
+  // Rate limit riêng cho login/register — 50 req/phút mỗi IP, không phân biệt role
+  await app.register(rateLimit, {
+    max: 50,
+    timeWindow: '1 minute',
+    keyGenerator: (request) => {
+      return request.ip;
+    },
+    allowList: (request: any) => {
+      // Chỉ áp dụng cho login/register (API + form page actions)
+      const url = request.url || '';
+      return url !== '/login' && url !== '/register' && url !== '/login-page' && url !== '/register-page';
+    },
+    errorResponseBuilder: () => ({
+      success: false,
+      message: 'Vượt quá giới hạn yêu cầu, vui lòng thử lại sau',
+    }),
+  });
+
   const typedApp = app.withTypeProvider<ZodTypeProvider>();
 
+  // ── API Routes ──
   typedApp.post('/register', {
     schema: { body: RegisterSchema },
-    config: {
-      rateLimit: {
-        max: 10,
-        timeWindow: '1 minute'
-      }
-    }
   }, AuthController.register);
 
   typedApp.post('/login', {
     schema: { body: LoginSchema },
-    config: {
-      rateLimit: {
-        max: 10,
-        timeWindow: '1 minute'
-      }
-    }
   }, AuthController.login);
 
   // Cấp lại Access Token bằng Refresh Token
@@ -72,5 +81,17 @@ export async function authRoutes(app: FastifyInstance) {
       })
     }
   }, AuthController.updateProfile);
-}
 
+  // Set admin_token cookie từ frontend (giải quyết cross-origin cookie issue)
+  typedApp.get('/set-admin-session', {
+    schema: {
+      querystring: z.object({ token: z.string().min(1) })
+    }
+  }, AuthController.setAdminSession);
+
+  // ── HTML Pages (Login/Register forms) — chỉ cho phép từ Frontend ──
+  typedApp.get('/login', { preHandler: AuthPageController.checkReferer }, AuthPageController.getLoginPage);
+  typedApp.get('/register', { preHandler: AuthPageController.checkReferer }, AuthPageController.getRegisterPage);
+  typedApp.post('/login-page', { preHandler: AuthPageController.checkReferer }, AuthPageController.loginPageAction);
+  typedApp.post('/register-page', { preHandler: AuthPageController.checkReferer }, AuthPageController.registerPageAction);
+}

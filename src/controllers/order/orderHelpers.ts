@@ -1,7 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import mongoose from 'mongoose';
 import { ProductVariant } from '../../models/ProductVariant.ts';
-import { ProductTaxonomyTerm } from '../../models/ProductTaxonomyTerm.ts';
 import { Product } from '../../models/Product.ts';
 
 /**
@@ -27,7 +26,6 @@ export function getTenantId(req: FastifyRequest): string {
 }
 
 /**
- * Enhance order items with product data (variants, taxonomy, rating, image)
  */
 export async function enhanceItemsWithProductData(items: any[]): Promise<void> {
   if (!items || items.length === 0) return;
@@ -37,31 +35,18 @@ export async function enhanceItemsWithProductData(items: any[]): Promise<void> {
 
   if (productIds.length === 0) return;
 
-  const [variants, taxonomyLinks, productData] = await Promise.all([
+  const [variants, productData] = await Promise.all([
     ProductVariant.find({ productId: { $in: productIds } }).lean(),
-    ProductTaxonomyTerm.find({ productId: { $in: productIds } })
-      .populate({ path: 'termId', model: 'TaxonomyTerm', select: 'name slug' })
-      .populate({ path: 'taxonomyId', model: 'Taxonomy', select: 'slug name' })
-      .lean(),
     Product.find(
       { _id: { $in: productIds } },
-      { _id: 1, rating: 1, reviewsCount: 1, image: 1 }
+      { _id: 1, reviewsCount: 1, image: 1 }
     ).lean(),
   ]);
 
   for (const item of items) {
     const pid = item.productId?.toString();
     item.variants = variants.filter((v: any) => v.productId?.toString() === pid);
-    item.taxonomy = taxonomyLinks
-      .filter((t: any) => t.productId?.toString() === pid)
-      .map((t: any) => ({
-        taxonomySlug: (t.taxonomyId as any)?.slug,
-        taxonomyName: (t.taxonomyId as any)?.name,
-        termName: (t.termId as any)?.name,
-        termSlug: (t.termId as any)?.slug,
-      }));
     const prod = productData.find((p: any) => p._id.toString() === pid);
-    item.productRating = prod?.rating || 0;
     item.productReviewsCount = prod?.reviewsCount || 0;
     item.productImage = prod?.image || null;
   }

@@ -13,13 +13,21 @@ export async function productRoutes(app: FastifyInstance) {
   // Suggest / Autocomplete cho Navbar (must be before /:id)
   app.get('/suggest', ProductController.suggestProducts);
 
-  // Bulk fetch (must be before /:id)
+  // Bulk fetch + top brands by views (must be before /:id)
   app.get('/bulk', ProductController.getBulkProducts);
+  app.get('/top-brands-by-views', ProductController.getTopBrandsByViews);
 
-  // Quản lý sản phẩm (CRUD)
+  // Quản lý sản phẩm (CRUD) — specific routes MUST come before /:id
   app.get('/', ProductController.getAllProducts);
+
+  // API: Sản phẩm cần bổ sung thông tin (admin only)
+  app.get('/needs-supplement', { preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')] }, ProductController.getNeedsSupplement);
+
   app.get('/:id/images', ProductController.getProductImages);
   app.get('/:id', ProductController.getProductById);
+
+  // Track product view (public)
+  app.post('/:id/track-view', ProductController.trackProductView);
   
   // Tạo/Cập nhật/Xóa sản phẩm (Chỉ Admin/Subadmin)
   app.post('/', { preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')] }, ProductController.createProduct);

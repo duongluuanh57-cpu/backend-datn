@@ -2,8 +2,6 @@ import { UserRepository } from '../../repositories/UserRepository.ts';
 import type { RegisterInput } from '../../types/user.types.ts';
 import { hashPassword, generateTokens } from '../../utils/auth.ts';
 import { ValidationError } from '../../utils/errors.ts';
-import { QStashService } from '../QStashService.ts';
-import { PostHogService } from '../PostHogService.ts';
 import { AuditLog } from '../../models/AuditLog.ts';
 
 export class AuthRegisterService {
@@ -38,25 +36,8 @@ export class AuthRegisterService {
       status: 'SUCCESS'
     });
 
-    // 5. Đẩy job gửi email chào mừng vào QStash
-    await QStashService.publish('/welcome-email', {
-      userId: newUser._id.toString(),
-      email: newUser.email,
-      name: newUser.username
-    }).catch(err => console.error('[QStash Error] Failed to queue welcome email:', err));
-
-    // 6. Track Analytics (PostHog)
-    PostHogService.identify(newUser._id.toString(), {
-      email: newUser.email,
-      username: newUser.username,
-      role: newUser.role,
-      tenantId: newUser.tenantId,
-      created_at: newUser.createdAt,
-    });
-    PostHogService.capture(newUser._id.toString(), 'user_registered', { method: 'credentials' });
-
-    // 7. Sinh bộ đôi JWT Token
-    const tokens = generateTokens(newUser._id.toString(), newUser.role);
+    // 5. Sinh bộ đôi JWT Token
+    const tokens = generateTokens(newUser._id.toString(), newUser.role, false, newUser.tenantId || 'default');
 
     return {
       user: {

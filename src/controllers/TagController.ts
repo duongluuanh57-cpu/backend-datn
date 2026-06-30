@@ -8,7 +8,7 @@ export class TagController {
    */
   static async getAllTags(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       const { page, limit, search } = req.query as { page?: string; limit?: string; search?: string };
 
       // If page param is provided, use paginated response
@@ -36,7 +36,7 @@ export class TagController {
   static async getTagById(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       
       const tag = await TagService.getTagById(id, tenantId);
       if (!tag) {
@@ -63,7 +63,7 @@ export class TagController {
    */
   static async createTag(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       const tagData = req.body as any;
       
       const tag = await TagService.createTag(tagData, tenantId);
@@ -86,7 +86,7 @@ export class TagController {
   static async updateTag(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       const tagData = req.body as any;
       
       const tag = await TagService.updateTag(id, tagData, tenantId);
@@ -115,7 +115,7 @@ export class TagController {
   static async deleteTag(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       
       const success = await TagService.deleteTag(id, tenantId);
       if (!success) {
@@ -142,7 +142,7 @@ export class TagController {
    */
   static async bulkDeleteTags(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default-tenant';
+      const tenantId = (req as any).user?.tenantId || 'default';
       const { ids } = req.body as { ids: string[] };
       
       if (!ids || ids.length === 0) {

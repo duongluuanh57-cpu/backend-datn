@@ -1,119 +1,146 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import { PaymentService } from '../services/PaymentService.ts';
+import { PaymentService, PaymentMethodService } from '../services/PaymentService.ts';
 
 function getTenantId(req: FastifyRequest): string {
-  return (req as any).user?.tenantId || 'default-tenant';
+  return (req as any).user?.tenantId || 'default';
 }
 
 function requireAdmin(req: FastifyRequest, reply: FastifyReply): boolean {
   const user = (req as any).user;
-  if (!user || (user.role !== 'ADMIN' && user.role !== 'SUBADMIN')) {
-    reply.status(403).send({ success: false, message: 'Bạn không có quyền thực hiện hành động này' });
+  if (user?.role !== 'ADMIN' && user?.role !== 'SUBADMIN') {
+    reply.status(403).send({ success: false, message: 'Không có quyền truy cập' });
     return false;
   }
   return true;
 }
 
-export class PaymentController {
-  /** GET /api/payments */
+// ─── Payment Methods ───
+
+export class PaymentMethodController {
+  /** GET /api/payment-methods — public, chỉ lấy active */
+  static async getActive(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const tenantId = getTenantId(req);
+      const methods = await PaymentMethodService.getAll(tenantId, true);
+      return reply.send({ success: true, data: methods });
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, message: err.message });
+    }
+  }
+
+  /** GET /api/payment-methods/all — admin */
   static async getAll(req: FastifyRequest, reply: FastifyReply) {
     try {
       if (!requireAdmin(req, reply)) return;
-      const list = await PaymentService.getAll(getTenantId(req));
-      return reply.send({ success: true, data: list });
+      const tenantId = getTenantId(req);
+      const methods = await PaymentMethodService.getAll(tenantId, false);
+      return reply.send({ success: true, data: methods });
     } catch (err: any) {
       return reply.status(500).send({ success: false, message: err.message });
     }
   }
 
-  /** GET /api/payments/:id */
-  static async getById(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const { id } = req.params as { id: string };
-      const item = await PaymentService.getById(id, getTenantId(req));
-      if (!item) return reply.status(404).send({ success: false, message: 'Không tìm thấy thanh toán' });
-      return reply.send({ success: true, data: item });
-    } catch (err: any) {
-      return reply.status(500).send({ success: false, message: err.message });
-    }
-  }
-
-  /** GET /api/payments/order/:orderId */
-  static async getByOrder(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const { orderId } = req.params as { orderId: string };
-      const items = await PaymentService.getByOrder(orderId, getTenantId(req));
-      return reply.send({ success: true, data: items });
-    } catch (err: any) {
-      return reply.status(500).send({ success: false, message: err.message });
-    }
-  }
-
-  /** POST /api/payments */
+  /** POST /api/payment-methods — admin tạo */
   static async create(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const body = req.body as any;
-      if (!body.orderId) return reply.status(400).send({ success: false, message: 'orderId là bắt buộc' });
-      if (!body.method) return reply.status(400).send({ success: false, message: 'method là bắt buộc' });
-      if (!body.amount || body.amount <= 0) return reply.status(400).send({ success: false, message: 'amount phải lớn hơn 0' });
-
-      const item = await PaymentService.create(body, getTenantId(req));
-      return reply.status(201).send({ success: true, data: item });
+      if (!requireAdmin(req, reply)) return;
+      const body = req.body as { name: string; code: string; icon?: string; sortOrder?: number };
+      const method = await PaymentMethodService.create(body, getTenantId(req));
+      return reply.status(201).send({ success: true, data: method });
     } catch (err: any) {
       return reply.status(500).send({ success: false, message: err.message });
     }
   }
 
-  /** PATCH /api/payments/:id/paid */
-  static async markPaid(req: FastifyRequest, reply: FastifyReply) {
+  /** PATCH /api/payment-methods/:id — admin sửa */
+  static async update(req: FastifyRequest, reply: FastifyReply) {
     try {
       if (!requireAdmin(req, reply)) return;
       const { id } = req.params as { id: string };
-      const { transactionCode } = req.body as { transactionCode?: string };
-      const item = await PaymentService.markPaid(id, transactionCode, getTenantId(req));
-      if (!item) return reply.status(404).send({ success: false, message: 'Không tìm thấy thanh toán' });
-      return reply.send({ success: true, data: item });
+      const body = req.body as { name?: string; icon?: string; isActive?: boolean; sortOrder?: number };
+      const method = await PaymentMethodService.update(id, body, getTenantId(req));
+      if (!method) return reply.status(404).send({ success: false, message: 'Không tìm thấy' });
+      return reply.send({ success: true, data: method });
     } catch (err: any) {
       return reply.status(500).send({ success: false, message: err.message });
     }
   }
 
-  /** PATCH /api/payments/:id/failed */
-  static async markFailed(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      if (!requireAdmin(req, reply)) return;
-      const { id } = req.params as { id: string };
-      const item = await PaymentService.markFailed(id, getTenantId(req));
-      if (!item) return reply.status(404).send({ success: false, message: 'Không tìm thấy thanh toán' });
-      return reply.send({ success: true, data: item });
-    } catch (err: any) {
-      return reply.status(500).send({ success: false, message: err.message });
-    }
-  }
-
-  /** PATCH /api/payments/:id/refunded */
-  static async markRefunded(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      if (!requireAdmin(req, reply)) return;
-      const { id } = req.params as { id: string };
-      const item = await PaymentService.markRefunded(id, getTenantId(req));
-      if (!item) return reply.status(404).send({ success: false, message: 'Không tìm thấy thanh toán' });
-      return reply.send({ success: true, data: item });
-    } catch (err: any) {
-      return reply.status(500).send({ success: false, message: err.message });
-    }
-  }
-
-  /** DELETE /api/payments/:id */
+  /** DELETE /api/payment-methods/:id — admin xóa */
   static async remove(req: FastifyRequest, reply: FastifyReply) {
     try {
       if (!requireAdmin(req, reply)) return;
       const { id } = req.params as { id: string };
-      const ok = await PaymentService.delete(id, getTenantId(req));
-      if (!ok) return reply.status(404).send({ success: false, message: 'Không tìm thấy thanh toán' });
-      return reply.send({ success: true, message: 'Đã xoá thanh toán' });
+      const ok = await PaymentMethodService.delete(id, getTenantId(req));
+      if (!ok) return reply.status(404).send({ success: false, message: 'Không tìm thấy' });
+      return reply.send({ success: true, message: 'Đã xóa' });
     } catch (err: any) {
       return reply.status(500).send({ success: false, message: err.message });
     }
+  }
+}
+
+// ─── Payment Transactions ───
+
+export class PaymentController {
+  static async getAll(req: FastifyRequest, reply: FastifyReply) {
+    if (!requireAdmin(req, reply)) return;
+    const list = await PaymentService.getAll(getTenantId(req));
+    return reply.send({ success: true, data: list });
+  }
+
+  static async getById(req: FastifyRequest, reply: FastifyReply) {
+    if (!requireAdmin(req, reply)) return;
+    const { id } = req.params as { id: string };
+    const item = await PaymentService.getById(id, getTenantId(req));
+    if (!item) return reply.status(404).send({ success: false, message: 'Không tìm thấy' });
+    return reply.send({ success: true, data: item });
+  }
+
+  static async getByOrder(req: FastifyRequest, reply: FastifyReply) {
+    if (!requireAdmin(req, reply)) return;
+    const { orderId } = req.params as { orderId: string };
+    const items = await PaymentService.getByOrder(orderId, getTenantId(req));
+    return reply.send({ success: true, data: items });
+  }
+
+  static async create(req: FastifyRequest, reply: FastifyReply) {
+    if (!requireAdmin(req, reply)) return;
+    const body = req.body as { orderId: string; method: string };
+    const item = await PaymentService.create(body, getTenantId(req));
+    return reply.status(201).send({ success: true, data: item });
+  }
+
+  static async markPaid(req: FastifyRequest, reply: FastifyReply) {
+    if (!requireAdmin(req, reply)) return;
+    const { id } = req.params as { id: string };
+    const { transactionCode } = req.body as { transactionCode?: string };
+    const item = await PaymentService.markPaid(id, transactionCode, getTenantId(req));
+    if (!item) return reply.status(404).send({ success: false, message: 'Không tìm thấy' });
+    return reply.send({ success: true, data: item });
+  }
+
+  static async markFailed(req: FastifyRequest, reply: FastifyReply) {
+    if (!requireAdmin(req, reply)) return;
+    const { id } = req.params as { id: string };
+    const item = await PaymentService.markFailed(id, getTenantId(req));
+    if (!item) return reply.status(404).send({ success: false });
+    return reply.send({ success: true, data: item });
+  }
+
+  static async markRefunded(req: FastifyRequest, reply: FastifyReply) {
+    if (!requireAdmin(req, reply)) return;
+    const { id } = req.params as { id: string };
+    const item = await PaymentService.markRefunded(id, getTenantId(req));
+    if (!item) return reply.status(404).send({ success: false });
+    return reply.send({ success: true, data: item });
+  }
+
+  static async remove(req: FastifyRequest, reply: FastifyReply) {
+    if (!requireAdmin(req, reply)) return;
+    const { id } = req.params as { id: string };
+    const ok = await PaymentService.delete(id, getTenantId(req));
+    if (!ok) return reply.status(404).send({ success: false });
+    return reply.send({ success: true, message: 'Đã xóa' });
   }
 }

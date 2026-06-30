@@ -1,0 +1,163 @@
+/**
+ * aiInteractionService — Sử dụng Vercel AI SDK (Interactions API) cho Gemini
+ * 
+ * API: streamText, generateText, embed từ 'ai' + '@ai-sdk/google'
+ * 
+ * Dùng google.interactions() để gọi Gemini Interactions API
+ * (POST /v1beta/interactions) — API mới nhất của Google
+ */
+import { streamText, generateText, embed } from 'ai';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+
+// Tạo provider với API key từ env
+const provider = createGoogleGenerativeAI({
+  apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+});
+
+const PRIMARY_MODEL = 'gemini-3.1-flash-lite-preview';
+const EMBEDDING_MODEL = 'gemini-embedding-2';
+
+// ── HELPERS ──────────────────────────────────────────────────────────────
+
+/** Validate API key */
+function validateKey(): string {
+  const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+  if (!key || key.trim() === '' || key === 'your_gemini_api_key') {
+    throw new Error(
+      '❌ GEMINI_API_KEY is not configured or is invalid. ' +
+      'Please set a valid GEMINI_API_KEY in your environment variables.'
+    );
+  }
+  return key;
+}
+
+// ── MAIN FUNCTIONS ───────────────────────────────────────────────────────
+
+/**
+ * Stream chat — dùng streamText + google.interactions() (Interactions API)
+ * 
+ * Interactions API là endpoint mới nhất của Google Gemini:
+ * POST /v1beta/interactions
+ * 
+ * Tương thích hoàn toàn với Response stream mà frontend đang xài
+ */
+export async function createChatStream(
+  messages: { role: string; content: string }[],
+  systemPrompt?: string,
+  image?: string
+): Promise<Response> {
+  validateKey();
+
+  // Map messages từ format cũ sang Vercel AI SDK format
+  const vercelMessages = messages
+    .filter(m => m.role === 'user' || m.role === 'assistant' || m.role === 'model')
+    .map(m => {
+      const content: any = [{ type: 'text' as const, text: m.content || '' }];
+      return { role: m.role === 'model' ? 'assistant' as const : 'user' as const, content };
+    });
+
+  // Nếu có image, inject vào message cuối
+  if (image && vercelMessages.length > 0) {
+    const lastMsg = vercelMessages[vercelMessages.length - 1];
+    if (typeof lastMsg.content === 'string') {
+      lastMsg.content = [{ type: 'text' as const, text: lastMsg.content }];
+    }
+    if (Array.isArray(lastMsg.content)) {
+      lastMsg.content.push({
+        type: 'image' as const,
+        image: image.split(',')[1] || image,
+      });
+    }
+  }
+
+  // Dùng Interactions API qua google.interactions()
+  const result = streamText({
+    model: provider.interactions(PRIMARY_MODEL),
+    system: systemPrompt || undefined,
+    messages: vercelMessages,
+  });
+
+  // Chuyển đổi stream về Response dạng ReadableStream (tương thích frontend)
+  const textStream = result.textStream;
+  const encoder = new TextEncoder();
+
+  const readable = new ReadableStream({
+    async start(controller) {
+      try {
+        for await (const chunk of textStream) {
+          if (chunk) controller.enqueue(encoder.encode(chunk));
+        }
+        controller.close();
+      } catch (e: any) {
+        controller.error(e);
+      }
+    },
+  });
+
+  return new Response(readable, {
+    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+  });
+}
+
+/**
+ * Generate text (non-stream) — dùng generateText + Interactions API
+ * Dùng cho classification, tool calling
+ */
+export async function generateTextResponse(
+  prompt: string,
+  systemPrompt?: string
+): Promise<string> {
+  validateKey();
+
+  const result = await generateText({
+    model: provider.interactions(PRIMARY_MODEL),
+    system: systemPrompt || undefined,
+    messages: [{ role: 'user' as const, content: prompt }],
+  });
+
+  return result.text;
+}
+
+/**
+ * Generate embedding — dùng embed từ Vercel AI SDK
+ */
+export async function generateEmbeddingVector(text: string): Promise<number[]> {
+  validateKey();
+
+  const { embedding } = await embed({
+    model: provider.embedding(EMBEDDING_MODEL),
+    value: text,
+  });
+
+  return embedding;
+}
+
+/**
+ * Health check
+ */
+export async function healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; details: any }> {
+  try {
+    validateKey();
+    const result = await generateText({
+      model: provider.interactions(PRIMARY_MODEL),
+      messages: [{ role: 'user', content: 'Test' }],
+    });
+    return {
+      status: 'healthy',
+      details: {
+        apiKeyConfigured: true,
+        model: PRIMARY_MODEL,
+        apiType: 'interactions',
+        testResponse: result.text.substring(0, 50) + '...',
+      },
+    };
+  } catch (error: any) {
+    return {
+      status: 'unhealthy',
+      details: {
+        error: error.message,
+        apiKeyConfigured: !!process.env.GEMINI_API_KEY,
+      },
+    };
+  }
+}

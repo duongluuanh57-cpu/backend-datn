@@ -12,10 +12,6 @@ export class AICoreController {
     }
   }
 
-  static async runAgent(req: FastifyRequest, reply: FastifyReply) {
-    return reply.status(200).send({ success: true });
-  }
-
   static async healthCheck(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { AIService } = await import('../services/AIService.ts');

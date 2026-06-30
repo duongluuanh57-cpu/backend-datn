@@ -19,7 +19,7 @@ export class BrandService {
   ): Promise<{ items: IBrand[]; total: number; page: number; totalPages: number }> {
     const { page, limit, search, origin } = options;
 
-    const query: any = { tenantId };
+    const query: any = {};
 
     if (search) {
       query.$or = [

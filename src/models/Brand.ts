@@ -31,6 +31,7 @@ const BrandSchema = new Schema<IBrand>(
 BrandSchema.index({ tenantId: 1, name: 1 });
 BrandSchema.index({ tenantId: 1, origin: 1 });
 BrandSchema.index({ tenantId: 1, description: 1 });
+BrandSchema.index({ name: 'text', description: 'text' });
 
 BrandSchema.plugin(multiTenancyPlugin);
 

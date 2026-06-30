@@ -23,6 +23,7 @@ export class AuthController {
   static login = AuthSessionController.login;
   static refresh = AuthSessionController.refresh;
   static logout = AuthSessionController.logout;
+  static setAdminSession = AuthSessionController.setAdminSession;
 
   // Profile methods
   static changePassword = AuthProfileController.changePassword;

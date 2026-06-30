@@ -11,8 +11,6 @@ export interface IUser extends Document {
   totalSpent: number;
   tenantId: string; // Thêm vào interface
   status: 'active' | 'inactive' | 'suspended'; // Trạng thái tài khoản
-  twoFactorSecret?: string;
-  twoFactorEnabled: boolean;
   fullName?: string;
   phoneNumber?: string;
   gender?: 'MALE' | 'FEMALE' | 'OTHER' | '';
@@ -37,8 +35,6 @@ const UserSchema = new Schema<IUser>(
     totalSpent: { type: Number, default: 0 },
     tenantId: { type: String, required: true, index: true }, // Đã bổ sung
     status: { type: String, enum: ['active', 'inactive', 'suspended'], default: 'active', index: true }, // Trạng thái tài khoản
-    twoFactorSecret: { type: String },
-    twoFactorEnabled: { type: Boolean, default: false },
     fullName: { type: String, default: '' },
     phoneNumber: { type: String, default: '' },
     gender: { type: String, enum: ['MALE', 'FEMALE', 'OTHER', ''], default: '' },

@@ -12,11 +12,14 @@ import { R2Deleter } from './image/r2Deleter.ts';
 export class ImageService {
   // Optimization
   static optimizeForWeb = ImageOptimizer.optimizeForWeb;
+  static optimizeForProduct = ImageOptimizer.optimizeForProduct;
+  static generateProductThumb = ImageOptimizer.generateProductThumb;
   static generateThumbnail = ImageOptimizer.generateThumbnail;
   static getMetadata = ImageOptimizer.getMetadata;
 
   // Upload
   static compressAndUpload = R2Uploader.compressAndUpload;
+  static uploadProductImage = R2Uploader.uploadProductImage;
 
   // Delete
   static deleteFromR2 = R2Deleter.deleteFromR2;

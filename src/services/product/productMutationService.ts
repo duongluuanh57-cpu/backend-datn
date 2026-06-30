@@ -8,9 +8,8 @@ import { Category } from '../../models/Category.ts';
 import { ProductImage } from '../../models/ProductImage.ts';
 import { ProductVariant } from '../../models/ProductVariant.ts';
 import { ImageService } from '../ImageService.ts';
-import { ProductTaxonomyTermService } from '../TaxonomyTermService.ts';
 import { FuzzyMatchCache } from '../FuzzyMatchCache.ts';
-import { findTaxonomyOnly, parseSizes, slugify } from './productHelpers.ts';
+import { parseSizes, slugify } from './productHelpers.ts';
 
 export class ProductMutationService {
 
@@ -20,11 +19,8 @@ export class ProductMutationService {
   static async updateProduct(id: string, data: any, tenantId: string): Promise<any | null> {
     const updateData: any = {};
     if (data.name !== undefined) updateData.name = data.name;
-    if (data.price !== undefined) updateData.price = data.price;
     if (data.description !== undefined) updateData.description = data.description;
-    if (data.rating !== undefined) updateData.rating = data.rating;
     if (data.reviewsCount !== undefined) updateData.reviewsCount = data.reviewsCount;
-    if (data.quantityInStock !== undefined) updateData.quantityInStock = data.quantityInStock;
     if (data.discountPercentage !== undefined) updateData.discountPercentage = data.discountPercentage;
     if (data.discountStartDate !== undefined) updateData.discountStartDate = data.discountStartDate;
     if (data.discountEndDate !== undefined) updateData.discountEndDate = data.discountEndDate;
@@ -74,22 +70,6 @@ export class ProductMutationService {
       }
     }
 
-    // Taxonomy mapping — ghi vào bảng trung gian ProductTaxonomyTerm
-    if (data.scentGroup !== undefined) {
-      const scentNames = data.scentGroup.split(',').map((s: string) => s.trim()).filter(Boolean);
-      const scentIds = (await Promise.all(scentNames.map((n: string) => findTaxonomyOnly(n, 'scent_group' as any, tenantId)))).filter(Boolean);
-      await ProductTaxonomyTermService.setTermsForProduct(id, 'scent_group', scentIds, tenantId);
-    }
-    if (data.concentration !== undefined) {
-      const concNames = data.concentration.split(',').map((s: string) => s.trim()).filter(Boolean);
-      const concIds = (await Promise.all(concNames.map((n: string) => findTaxonomyOnly(n, 'concentration' as any, tenantId)))).filter(Boolean);
-      await ProductTaxonomyTermService.setTermsForProduct(id, 'concentration', concIds, tenantId);
-    }
-    if (data.segment !== undefined) {
-      const segNames = data.segment.split(',').map((s: string) => s.trim()).filter(Boolean);
-      const segIds = (await Promise.all(segNames.map((n: string) => findTaxonomyOnly(n, 'segment' as any, tenantId)))).filter(Boolean);
-      await ProductTaxonomyTermService.setTermsForProduct(id, 'segment', segIds, tenantId);
-    }
     if (data.categories !== undefined) {
       const catNames = data.categories.split(',').map((s: string) => s.trim()).filter(Boolean);
       const catIds = (await Promise.all(catNames.map(async (n: string) => {
@@ -155,35 +135,6 @@ export class ProductMutationService {
         }
       }
 
-      // Sync ProductSEO
-      try {
-        const { ProductSEO } = await import('../../models/ProductSEO.ts');
-        const seoData: any = {};
-        if (data.metaTitle !== undefined) seoData.metaTitle = data.metaTitle;
-        if (data.metaDescription !== undefined) seoData.metaDescription = data.metaDescription;
-        if (data.slug !== undefined) seoData.slug = data.slug;
-        if (data.keywords !== undefined) {
-          seoData.keywords = Array.isArray(data.keywords)
-            ? data.keywords
-            : typeof data.keywords === 'string'
-              ? data.keywords.split(',').map((k: string) => k.trim()).filter(Boolean)
-              : [];
-        }
-        if (data.priceReport !== undefined) seoData.priceReport = data.priceReport;
-        if (data.sizeReport !== undefined) seoData.sizeReport = data.sizeReport;
-        if (data.discountReport !== undefined) seoData.discountReport = data.discountReport;
-
-        if (Object.keys(seoData).length > 0) {
-          await ProductSEO.findOneAndUpdate(
-            { productId: new mongoose.Types.ObjectId(id), tenantId },
-            { $set: seoData, $setOnInsert: { tenantId, productId: new mongoose.Types.ObjectId(id) } },
-            { upsert: true, new: true }
-          );
-        }
-      } catch (err) {
-        console.error('Failed to save ProductSEO in updateProduct:', err);
-      }
-
       // Xóa các cache liên quan sau khi cập nhật
       await clearProductCache(tenantId);
       try {
@@ -212,18 +163,8 @@ export class ProductMutationService {
       if (variantIds.length > 0) {
         await ProductVariant.deleteMany({ _id: { $in: variantIds }, tenantId });
       }
-      // Xóa taxonomy term links
-      await ProductTaxonomyTermService.deleteAllForProduct(id, tenantId);
       // Xóa tag links
       await ProductTag.deleteMany({ productId: id, tenantId });
-      // Delete SEO doc
-      try {
-        const { ProductSEO } = await import('../../models/ProductSEO.ts');
-        await ProductSEO.deleteOne({ productId: id, tenantId });
-      } catch (err) {
-        console.warn('Failed to delete ProductSEO in deleteProduct:', err);
-      }
-
       // Delete images and virtual folder from R2
       const foldersToDelete = new Set<string>();
       for (const img of images) {
@@ -270,18 +211,8 @@ export class ProductMutationService {
       if (allVariantIds.length > 0) {
         await ProductVariant.deleteMany({ _id: { $in: allVariantIds }, tenantId });
       }
-      // Xóa taxonomy term links
-      await ProductTaxonomyTermService.deleteAllForProducts(ids, tenantId);
       // Xóa tag links
       await ProductTag.deleteMany({ productId: { $in: ids }, tenantId });
-      // Delete SEO docs
-      try {
-        const { ProductSEO } = await import('../../models/ProductSEO.ts');
-        await ProductSEO.deleteMany({ productId: { $in: ids }, tenantId });
-      } catch (err) {
-        console.warn('Failed to delete ProductSEO in bulkDeleteProducts:', err);
-      }
-
       // Delete images and virtual folders from R2
       const foldersToDelete = new Set<string>();
       for (const img of images) {
@@ -322,9 +253,7 @@ export class ProductMutationService {
     if (data.name !== undefined) productData.name = data.name;
     if (data.price !== undefined) productData.price = data.price;
     if (data.description !== undefined) productData.description = data.description;
-    if (data.rating !== undefined) productData.rating = data.rating;
     if (data.reviewsCount !== undefined) productData.reviewsCount = data.reviewsCount;
-    if (data.quantityInStock !== undefined) productData.quantityInStock = data.quantityInStock;
     if (data.discountPercentage !== undefined) productData.discountPercentage = data.discountPercentage;
     if (data.discountStartDate !== undefined) productData.discountStartDate = data.discountStartDate;
     if (data.discountEndDate !== undefined) productData.discountEndDate = data.discountEndDate;
@@ -386,22 +315,6 @@ export class ProductMutationService {
       pendingTagSlugs.push(...data.tag.split(',').map((s: string) => s.trim()).filter(Boolean));
     }
 
-    // Taxonomy mapping — ghi vào bảng trung gian ProductTaxonomyTerm sau khi save
-    if (data.scentGroup) {
-      const scentNames = data.scentGroup.split(',').map((s: string) => s.trim()).filter(Boolean);
-      const scentIds = (await Promise.all(scentNames.map((n: string) => findTaxonomyOnly(n, 'scent_group' as any, tenantId)))).filter(Boolean);
-      productData._pendingScentIds = scentIds;
-    }
-    if (data.concentration) {
-      const concNames = data.concentration.split(',').map((s: string) => s.trim()).filter(Boolean);
-      const concIds = (await Promise.all(concNames.map((n: string) => findTaxonomyOnly(n, 'concentration' as any, tenantId)))).filter(Boolean);
-      productData._pendingConcIds = concIds;
-    }
-    if (data.segment) {
-      const segNames = data.segment.split(',').map((s: string) => s.trim()).filter(Boolean);
-      const segIds = (await Promise.all(segNames.map((n: string) => findTaxonomyOnly(n, 'segment' as any, tenantId)))).filter(Boolean);
-      productData._pendingSegIds = segIds;
-    }
     if (data.categories) {
       const catNames = data.categories.split(',').map((s: string) => s.trim()).filter(Boolean);
       const catIds = (await Promise.all(catNames.map(async (n: string) => {
@@ -413,11 +326,7 @@ export class ProductMutationService {
     const product = new Product(productData);
     const saved = await product.save();
 
-    // Ghi taxonomy term links vào bảng trung gian
     await Promise.all([
-      (productData._pendingScentIds as any[])?.length > 0 && ProductTaxonomyTermService.setTermsForProduct(saved._id.toString(), 'scent_group', productData._pendingScentIds as any[], tenantId),
-      (productData._pendingConcIds as any[])?.length > 0 && ProductTaxonomyTermService.setTermsForProduct(saved._id.toString(), 'concentration', productData._pendingConcIds as any[], tenantId),
-      (productData._pendingSegIds as any[])?.length > 0 && ProductTaxonomyTermService.setTermsForProduct(saved._id.toString(), 'segment', productData._pendingSegIds as any[], tenantId),
     ]);
 
     // Ghi tag links vào bảng trung gian ProductTag (CHỈ dùng tag đã tồn tại trong DB)
@@ -468,35 +377,6 @@ export class ProductMutationService {
         tenantId,
         url
       })));
-    }
-
-    // Sync SEO and reports in ProductSEO collection
-    try {
-      const { ProductSEO } = await import('../../models/ProductSEO.ts');
-      const keywordsArray = Array.isArray(data.keywords)
-        ? data.keywords
-        : typeof data.keywords === 'string'
-          ? data.keywords.split(',').map((k: string) => k.trim()).filter(Boolean)
-          : [];
-
-      await ProductSEO.findOneAndUpdate(
-        { productId: saved._id, tenantId },
-        {
-          $set: {
-            metaTitle: data.metaTitle || '',
-            metaDescription: data.metaDescription || '',
-            slug: data.slug || '',
-            keywords: keywordsArray,
-            priceReport: data.priceReport || '',
-            sizeReport: data.sizeReport || '',
-            discountReport: data.discountReport || '',
-          },
-          $setOnInsert: { tenantId, productId: saved._id }
-        },
-        { upsert: true, new: true }
-      );
-    } catch (err) {
-      console.error('Failed to save ProductSEO in createProduct:', err);
     }
 
     // Clear Redis Cache so that the new product immediately shows up on the homepage/outside!

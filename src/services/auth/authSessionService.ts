@@ -2,7 +2,6 @@ import { UserRepository } from '../../repositories/UserRepository.ts';
 import type { LoginInput } from '../../types/user.types.ts';
 import { comparePassword, generateTokens } from '../../utils/auth.ts';
 import { UnauthorizedError } from '../../utils/errors.ts';
-import { PostHogService } from '../PostHogService.ts';
 import { AuditLog } from '../../models/AuditLog.ts';
 import { redis } from '../../config/redis.ts';
 
@@ -52,11 +51,8 @@ export class AuthSessionService {
       status: 'SUCCESS'
     });
 
-    // 5. Track Analytics (PostHog)
-    PostHogService.capture(user._id.toString(), 'user_logged_in', { ...metadata, rememberMe: data.rememberMe });
-
-    // 6. Sinh bộ đôi Token
-    const tokens = generateTokens(user._id.toString(), user.role, data.rememberMe);
+    // 5. Sinh bộ đôi Token
+    const tokens = generateTokens(user._id.toString(), user.role, data.rememberMe, (user as any).tenantId || 'default');
 
     return {
       user: {
@@ -99,8 +95,6 @@ export class AuthSessionService {
       tenantId,
       status: 'SUCCESS'
     });
-
-    PostHogService.capture(userId, 'user_logged_out');
 
     return { success: true };
   }

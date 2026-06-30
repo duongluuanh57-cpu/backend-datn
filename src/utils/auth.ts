@@ -23,7 +23,7 @@ export const comparePassword = async (password: string, hash: string): Promise<b
  * - Thêm `iss` (issuer) và `aud` (audience) để validate nguồn gốc
  * - Whitelist algorithm: HS256
  */
-export const generateTokens = (userId: string, role: string, rememberMe: boolean = false) => {
+export const generateTokens = (userId: string, role: string, rememberMe: boolean = false, tenantId: string = 'default') => {
   const isAdmin = role === 'ADMIN' || role === 'SUBADMIN';
   const accessExpiresIn = isAdmin ? '365d' : (rememberMe ? '7d' : '15m');
   const refreshExpiresIn = isAdmin ? '365d' : '7d';
@@ -33,6 +33,7 @@ export const generateTokens = (userId: string, role: string, rememberMe: boolean
       sub: userId,       // subject — chuẩn RFC 7519
       userId,
       role,
+      tenantId,
       type: 'access',
     },
     JWT_SECRET,
@@ -67,7 +68,7 @@ export const generateTokens = (userId: string, role: string, rememberMe: boolean
  * - Validate issuer và audience
  * - Validate type claim (chống dùng refresh token thay access token)
  */
-export const verifyAccessToken = (token: string): { userId: string; role: string } => {
+export const verifyAccessToken = (token: string): { userId: string; role: string; tenantId: string } => {
   const decoded = jwt.verify(token, JWT_SECRET, {
     algorithms: ['HS256'],     // Chỉ chấp nhận HS256, chặn 'none' và các alg khác
     issuer: JWT_ISSUER,
@@ -78,7 +79,7 @@ export const verifyAccessToken = (token: string): { userId: string; role: string
     throw new Error('Invalid token type — refresh token không được dùng ở đây');
   }
 
-  return { userId: decoded.userId, role: decoded.role };
+  return { userId: decoded.userId, role: decoded.role, tenantId: decoded.tenantId || 'default' };
 };
 
 /**

@@ -35,7 +35,7 @@ export class OAuthController {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     
     // Redirect về Frontend kèm token
-    const redirectUrl = new URL(`${frontendUrl}/vi/auth/callback`);
+    const redirectUrl = new URL(`${frontendUrl}/auth/callback`);
     redirectUrl.searchParams.set('accessToken', result.tokens.accessToken);
     redirectUrl.searchParams.set('refreshToken', result.tokens.refreshToken);
     redirectUrl.searchParams.set('user', encodeURIComponent(JSON.stringify(result.user)));
