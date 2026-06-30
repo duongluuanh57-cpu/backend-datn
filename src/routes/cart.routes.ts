@@ -14,6 +14,9 @@ export async function cartRoutes(app: FastifyInstance) {
   // PATCH /api/cart/item — Cập nhật số lượng
   app.patch('/item', CartController.updateCartItem);
 
+  // PATCH /api/cart/item/variant — Đổi biến thể sản phẩm
+  app.patch('/item/variant', CartController.updateCartItemVariant);
+
   // DELETE /api/cart/item/:productId — Xóa 1 sản phẩm
   app.delete('/item/:productId', CartController.removeCartItem);
 

@@ -7,7 +7,7 @@ import { readFileSync } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const viewsDir = join(__dirname, 'views');
+const viewsDir = join(__dirname, '../../views');
 
 function renderEjs(templatePath: string, data: Record<string, any> = {}): string {
   const tmpl = readFileSync(join(viewsDir, templatePath), 'utf-8');
@@ -61,6 +61,38 @@ export class AdminPageController {
     const apiToken = (req as any).token || '';
     const body = renderEjs('admin/media.ejs', { apiToken });
     return reply.view('admin/layout.ejs', { ...getCommonData(u, 'Media Library', 'media', 'Hệ thống'), body, apiToken });
+  }
+
+  // ── AI Create Pages ──
+  static async aiCreateUser(req: FastifyRequest, reply: FastifyReply) {
+    const u = await getDoc((req as any).user?.userId);
+    const apiToken = (req as any).token || '';
+    const body = renderEjs('admin/ai/create-user.ejs', { apiToken });
+    return reply.view('admin/layout.ejs', { ...getCommonData(u, 'AI Tạo người dùng', 'users', 'Hệ thống'), body, apiToken });
+  }
+  static async aiCreateBrand(req: FastifyRequest, reply: FastifyReply) {
+    const u = await getDoc((req as any).user?.userId);
+    const apiToken = (req as any).token || '';
+    const body = renderEjs('admin/ai/create-brand.ejs', { apiToken });
+    return reply.view('admin/layout.ejs', { ...getCommonData(u, 'AI Tạo thương hiệu', 'brands', 'Quản lý Cửa hàng'), body, apiToken });
+  }
+  static async aiCreateCategory(req: FastifyRequest, reply: FastifyReply) {
+    const u = await getDoc((req as any).user?.userId);
+    const apiToken = (req as any).token || '';
+    const body = renderEjs('admin/ai/create-category.ejs', { apiToken });
+    return reply.view('admin/layout.ejs', { ...getCommonData(u, 'AI Tạo danh mục', 'categories', 'Quản lý Cửa hàng'), body, apiToken });
+  }
+  static async aiCreateTag(req: FastifyRequest, reply: FastifyReply) {
+    const u = await getDoc((req as any).user?.userId);
+    const apiToken = (req as any).token || '';
+    const body = renderEjs('admin/ai/create-tag.ejs', { apiToken });
+    return reply.view('admin/layout.ejs', { ...getCommonData(u, 'AI Tạo tag', 'tags', 'Quản lý Cửa hàng'), body, apiToken });
+  }
+  static async aiCreateVoucher(req: FastifyRequest, reply: FastifyReply) {
+    const u = await getDoc((req as any).user?.userId);
+    const apiToken = (req as any).token || '';
+    const body = renderEjs('admin/ai/create-voucher.ejs', { apiToken });
+    return reply.view('admin/layout.ejs', { ...getCommonData(u, 'AI Tạo mã giảm giá', 'vouchers', 'Quản lý Cửa hàng'), body, apiToken });
   }
 
   static async logout(_req: FastifyRequest, reply: FastifyReply) {

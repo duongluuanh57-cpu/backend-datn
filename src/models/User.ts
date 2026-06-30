@@ -8,7 +8,6 @@ export interface IUser extends Document {
   passwordHash: string;
   role: 'USER' | 'ADMIN' | 'SUBADMIN';
   memberTier: 'MEMBER' | 'Bac' | 'Vang' | 'KimCuong';
-  totalSpent: number;
   tenantId: string; // Thêm vào interface
   status: 'active' | 'inactive' | 'suspended'; // Trạng thái tài khoản
   fullName?: string;
@@ -32,7 +31,6 @@ const UserSchema = new Schema<IUser>(
     passwordHash: { type: String },          // Optional với OAuth users (không có mật khẩu)
     role: { type: String, enum: ['USER', 'ADMIN', 'SUBADMIN'], default: 'USER' },
     memberTier: { type: String, enum: ['MEMBER', 'Bac', 'Vang', 'KimCuong'], default: 'MEMBER' },
-    totalSpent: { type: Number, default: 0 },
     tenantId: { type: String, required: true, index: true }, // Đã bổ sung
     status: { type: String, enum: ['active', 'inactive', 'suspended'], default: 'active', index: true }, // Trạng thái tài khoản
     fullName: { type: String, default: '' },

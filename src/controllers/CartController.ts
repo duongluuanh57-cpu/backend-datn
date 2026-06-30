@@ -9,10 +9,30 @@ import { redis } from '../config/redis.ts';
 import mongoose from 'mongoose';
 
 export class CartController {
-  private static formatCart(cart: any, items: any[]) {
+  private static async enrichItemsWithVariants(items: any[]) {
+    const enriched = await Promise.all(items.map(async (item) => {
+      const variants = await ProductVariant.find({ productId: item.productId })
+        .select('size price quantityInStock isDefault')
+        .sort({ sortOrder: 1 })
+        .lean();
+      return {
+        ...item,
+        availableVariants: variants.map((v: any) => ({
+          size: v.size,
+          price: v.price,
+          inStock: v.quantityInStock > 0,
+          isDefault: v.isDefault,
+        })),
+      };
+    }));
+    return enriched;
+  }
+
+  private static async formatCart(cart: any, items: any[]) {
+    const enrichedItems = await CartController.enrichItemsWithVariants(items);
     return {
       _id: cart._id,
-      items,
+      items: enrichedItems,
       totalAmount: cart.totalAmount,
       totalItems: items.reduce((sum: number, item: any) => sum + item.quantity, 0),
       voucherCode: cart.voucherCode || null,
@@ -79,7 +99,7 @@ export class CartController {
       return reply.send({
         success: true,
         message: `Áp dụng mã ${voucher.code} thành công! Giảm ${discountAmount.toLocaleString('vi-VN')}đ`,
-        data: CartController.formatCart(cart, items),
+        data: await CartController.formatCart(cart, items),
       });
     } catch (err: any) {
       return reply.status(500).send({ success: false, message: err.message });
@@ -105,7 +125,7 @@ export class CartController {
       return reply.send({
         success: true,
         message: 'Đã hủy mã giảm giá',
-        data: CartController.formatCart(cart, items),
+        data: await CartController.formatCart(cart, items),
       });
     } catch (err: any) {
       return reply.status(500).send({ success: false, message: err.message });
@@ -127,7 +147,7 @@ export class CartController {
         });
         return reply.send({
           success: true,
-          data: CartController.formatCart(cart, []),
+          data: await CartController.formatCart(cart, []),
         });
       }
 
@@ -135,7 +155,7 @@ export class CartController {
 
       return reply.send({
         success: true,
-        data: CartController.formatCart(cart, items),
+        data: await CartController.formatCart(cart, items),
       });
     } catch (err: any) {
       return reply.status(500).send({ success: false, message: err.message });
@@ -240,7 +260,7 @@ export class CartController {
 
       return reply.send({
         success: true,
-        data: CartController.formatCart(cart, items),
+        data: await CartController.formatCart(cart, items),
       });
     } catch (err: any) {
       return reply.status(500).send({ success: false, message: err.message });
@@ -288,7 +308,84 @@ export class CartController {
 
       return reply.send({
         success: true,
-        data: CartController.formatCart(cart, items),
+        data: await CartController.formatCart(cart, items),
+      });
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, message: err.message });
+    }
+  }
+
+  static async updateCartItemVariant(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) return reply.status(401).send({ success: false, message: 'Vui lòng đăng nhập' });
+
+      const { productId, currentVariantSize, newVariantSize } = req.body as { productId: string; currentVariantSize?: string; newVariantSize: string };
+
+      if (!productId || !newVariantSize || !mongoose.Types.ObjectId.isValid(productId)) {
+        return reply.status(400).send({ success: false, message: 'Dữ liệu không hợp lệ' });
+      }
+
+      const variantDoc = await ProductVariant.findOne({
+        productId: new mongoose.Types.ObjectId(productId),
+        size: newVariantSize,
+      }).lean();
+      if (!variantDoc) {
+        return reply.status(404).send({ success: false, message: 'Biến thể không tồn tại' });
+      }
+
+      const cart = await Cart.findOne({ userId: new mongoose.Types.ObjectId(userId) });
+      if (!cart) {
+        return reply.status(404).send({ success: false, message: 'Giỏ hàng trống' });
+      }
+
+      const filter: any = { cartId: cart._id, productId: new mongoose.Types.ObjectId(productId) };
+      if (currentVariantSize) filter.variantSize = currentVariantSize;
+
+      const item = await CartItem.findOne(filter);
+      if (!item) {
+        return reply.status(404).send({ success: false, message: 'Sản phẩm không có trong giỏ' });
+      }
+
+      // Kiểm tra xem đã có item với variant mới chưa (tránh trùng)
+      const existingWithNewVariant = await CartItem.findOne({
+        cartId: cart._id,
+        productId: new mongoose.Types.ObjectId(productId),
+        variantSize: newVariantSize,
+        _id: { $ne: item._id },
+      });
+
+      // Tính giá mới
+      const product = await Product.findById(productId).select('discountPercentage discountStartDate discountEndDate').lean() as any;
+      let finalPrice = variantDoc.price;
+      if (product?.discountPercentage) {
+        const now = new Date();
+        const startOk = !product.discountStartDate || new Date(product.discountStartDate) <= now;
+        const endOk = !product.discountEndDate || new Date(product.discountEndDate) >= now;
+        if (startOk && endOk) finalPrice = Math.round(variantDoc.price * (1 - product.discountPercentage / 100));
+      }
+
+      if (existingWithNewVariant) {
+        // Gộp quantity vào item variant mới, xóa item cũ
+        existingWithNewVariant.quantity += item.quantity;
+        existingWithNewVariant.price = finalPrice;
+        await existingWithNewVariant.save();
+        await CartItem.deleteOne({ _id: item._id });
+      } else {
+        item.variantSize = newVariantSize;
+        item.price = finalPrice;
+        await item.save();
+      }
+
+      const items = await CartItem.find({ cartId: cart._id }).lean();
+      cart.totalAmount = items.reduce((sum: number, i: any) => sum + i.price * i.quantity, 0);
+      cart.voucherCode = null as any;
+      cart.voucherDiscount = 0;
+      await cart.save();
+
+      return reply.send({
+        success: true,
+        data: await CartController.formatCart(cart, items),
       });
     } catch (err: any) {
       return reply.status(500).send({ success: false, message: err.message });
@@ -321,7 +418,7 @@ export class CartController {
 
       return reply.send({
         success: true,
-        data: CartController.formatCart(cart, items),
+        data: await CartController.formatCart(cart, items),
       });
     } catch (err: any) {
       return reply.status(500).send({ success: false, message: err.message });

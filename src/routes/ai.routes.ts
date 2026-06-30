@@ -26,6 +26,50 @@ export async function aiRoutes(app: FastifyInstance) {
     handler: AICatalogController.generateBrand,
   });
 
+  // POST /api/ai/generate-user - AI tạo thông tin người dùng
+  server.post('/generate-user', {
+    handler: AICatalogController.generateUser,
+  });
+
+  // POST /api/ai/generate-category - AI tạo danh mục
+  server.post('/generate-category', {
+    handler: AICatalogController.generateCategory,
+  });
+
+  // POST /api/ai/generate-tag - AI tạo tag
+  server.post('/generate-tag', {
+    handler: AICatalogController.generateTag,
+  });
+
+  // POST /api/ai/generate-voucher - AI tạo voucher
+  server.post('/generate-voucher', {
+    handler: AICatalogController.generateVoucher,
+  });
+
+  // POST /api/ai/create-user - Tạo user từ dữ liệu AI
+  server.post('/create-user', {
+    preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
+    handler: AICatalogController.createUserFromAI,
+  });
+
+  // POST /api/ai/create-category - Tạo category từ dữ liệu AI
+  server.post('/create-category', {
+    preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
+    handler: AICatalogController.createCategoryFromAI,
+  });
+
+  // POST /api/ai/create-tag - Tạo tag từ dữ liệu AI
+  server.post('/create-tag', {
+    preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
+    handler: AICatalogController.createTagFromAI,
+  });
+
+  // POST /api/ai/create-voucher - Tạo voucher từ dữ liệu AI
+  server.post('/create-voucher', {
+    preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
+    handler: AICatalogController.createVoucherFromAI,
+  });
+
   // POST /api/ai/chat - Streaming Vercel AI SDK (dành cho user)
   server.post('/chat', {
     handler: AIChatController.chatStream,
@@ -54,5 +98,18 @@ export async function aiRoutes(app: FastifyInstance) {
     // GET /api/ai/health - Health check cho AI services
   server.get('/health', {
     handler: AICoreController.healthCheck,
+  });
+
+  // ── Product Interview (Multi-step product creation) ──
+  // POST /api/ai/admin/product-interview - Bắt đầu/tiếp tục interview
+  // GET /api/ai/admin/product-interview/check?message=... - Kiểm tra intent
+  const { handleProductInterview, checkProductCreationIntent } = await import('../controllers/aiChat/productInterviewController.ts');
+  server.post('/admin/product-interview', {
+    preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
+    handler: handleProductInterview,
+  });
+  server.get('/admin/product-interview/check', {
+    preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
+    handler: checkProductCreationIntent,
   });
 }

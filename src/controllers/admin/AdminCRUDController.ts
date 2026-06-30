@@ -8,7 +8,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
 
-const v=join(dirname(fileURLToPath(import.meta.url)),'views');
+const v=join(dirname(fileURLToPath(import.meta.url)),'../../views');
 function r(t:string,d:any={}){return ejs.render(readFileSync(join(v,t),'utf-8'),d,{views:[v]})}
 async function ud(req:FastifyRequest){return UserRepository.findById((req as any).user?.userId)}
 function m(d:any,t:string,p:string,c?:string){const n=d?.fullName||d?.username||'Admin';return{pageTitle:t,currentPage:p,userName:n,userInitials:(n.charAt(0)||'A').toUpperCase(),userRole:d?.role==='ADMIN'?'Quản trị viên':'Nhân viên',breadcrumb:c||''}}

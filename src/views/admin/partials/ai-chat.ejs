@@ -45,14 +45,48 @@ function sendAIMessage() {
   }).then(function(r) {
     var contentType = r.headers.get('content-type') || '';
     if (contentType.includes('application/json')) {
-      return r.json().then(function(d) { return d.reply || d.content || 'Xin lỗi, tôi chưa hiểu câu hỏi này.'; });
+      return r.json().then(function(d) {
+        // Kiểm tra interview trigger
+        if (d.type === 'interview_trigger') {
+          return { isInterview: true, brandName: d.brandName, message: d.message };
+        }
+        return { isInterview: false, text: d.reply || d.content || 'Xin lỗi, tôi chưa hiểu câu hỏi này.' };
+      });
     }
-    return r.text();
+    return { isInterview: false, text: r.text() };
   }).then(function(reply) {
-    container.innerHTML += '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--color-text-secondary);align-self:flex-start;max-width:85%;">' + escapeHtml(reply) + '</div>';
-    container.scrollTop = container.scrollHeight;
+    if (reply.isInterview) {
+      // Hiển thị tin nhắn xác nhận
+      container.innerHTML += '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--color-text-secondary);align-self:flex-start;max-width:85%;">' + escapeHtml(reply.message) + '</div>';
+      container.scrollTop = container.scrollHeight;
+      // Mở interview popup
+      startInterview(reply.brandName);
+    } else {
+      container.innerHTML += '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--color-text-secondary);align-self:flex-start;max-width:85%;">' + escapeHtml(reply.text) + '</div>';
+      container.scrollTop = container.scrollHeight;
+    }
   }).catch(function() {
     container.innerHTML += '<div style="background:var(--bg-card);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--danger);align-self:flex-start;max-width:85%;">Lỗi kết nối đến AI server</div>';
+  });
+}
+
+// ── Interview Popup Integration ──
+function startInterview(brandName) {
+  fetch('/api/ai/admin/product-interview', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (window.API_TOKEN || '') },
+    body: JSON.stringify({ action: { brandName: brandName } })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(res) {
+    if (res.error) { alert(res.error); return; }
+    // Open popup (defined in ai-interview-popup.ejs)
+    if (typeof openInterview === 'function') {
+      openInterview(res.sessionId, res.response);
+    }
+  })
+  .catch(function(err) {
+    alert('Lỗi kết nối: ' + err.message);
   });
 }
 </script>

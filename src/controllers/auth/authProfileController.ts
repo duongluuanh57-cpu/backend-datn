@@ -137,13 +137,12 @@ export class AuthProfileController {
       let user = await User.findById(userId).lean();
       if (!user) throw new UnauthorizedError('Người dùng không tồn tại');
 
-      // Luôn recalculate totalSpent từ orders đã delivered (real-time)
+      // Luôn recalculate totalSpent từ orders đã delivered (real-time, không lưu DB)
       const result = await Order.aggregate([
         { $match: { userId: new mongoose.Types.ObjectId(userId), status: 'delivered' } },
         { $group: { _id: null, total: { $sum: '$totalAmount' } } },
       ]);
       const totalSpent = result[0]?.total || 0;
-      await User.findByIdAndUpdate(userId, { totalSpent });
 
       const tier = computeMemberTier(totalSpent);
       if ((user as any).memberTier !== tier) {

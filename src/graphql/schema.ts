@@ -194,7 +194,7 @@ const resolvers = {
         sale: (sale || []).slice(0, 8).map(mapProduct),
         new: (newProducts || []).slice(0, 8).map(mapProduct),
         hot: (hot || []).slice(0, 10).map(mapProduct),
-        limited: (limited || []).slice(0, 8).map(mapProduct),
+        limited: (limited || []).slice(0, 10).map(mapProduct),
         standard: (standard || []).slice(0, 10).map(mapProduct),
         brands: (brands || []).filter((b: any) => b.status === 'active' && b.logo).map(mapBrand),
       };

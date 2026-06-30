@@ -11,6 +11,8 @@ import type { UserRole } from '../../services/queryRouter/queryRouterTypes.ts';
  * - Check role (ADMIN/SUBADMIN)
  * - Execute route phù hợp
  * - Admin query có function calling để lấy dữ liệu thật
+ * 
+ * Ngoại lệ: Nếu admin muốn "tạo sản phẩm cho hãng X" → trả về interview trigger
  */
 export async function adminChat(req: FastifyRequest, reply: FastifyReply) {
   try {
@@ -24,7 +26,30 @@ export async function adminChat(req: FastifyRequest, reply: FastifyReply) {
       return reply.status(400).send({ error: 'Message is required' });
     }
 
-    // ── Query Routing ──
+    // ── Kiểm tra intent "tạo sản phẩm cho hãng X" ──
+    const lowerMsg = message.toLowerCase();
+    const createPatterns = [
+      /tạo\s+(?:sản\s+phẩm\s+)?(?:cho|thương\s+hiệu|hãng|brand|của)?\s+(\S+(?:\s+\S+){0,3})/i,
+      /làm\s+(?:sản\s+phẩm\s+)?(?:cho|thương\s+hiệu|hãng|brand|của)?\s+(\S+(?:\s+\S+){0,3})/i,
+      /thêm\s+(?:sản\s+phẩm\s+)?(?:cho|thương\s+hiệu|hãng|brand|của)?\s+(\S+(?:\s+\S+){0,3})/i,
+    ];
+
+    for (const pattern of createPatterns) {
+      const match = lowerMsg.match(pattern);
+      if (match) {
+        let brandName = match[1].trim();
+        brandName = brandName.charAt(0).toUpperCase() + brandName.slice(1);
+
+        // Trả về special response để frontend mở interview popup
+        return reply.send({
+          type: 'interview_trigger',
+          brandName,
+          message: `Tôi sẽ giúp bạn tạo sản phẩm cho hãng ${brandName}. Hãy làm theo các bước sau:`,
+        });
+      }
+    }
+
+    // ── Query Routing (cho các câu hỏi thông thường) ──
     const result = await QueryRouterService.route({
       message,
       messages: history,
