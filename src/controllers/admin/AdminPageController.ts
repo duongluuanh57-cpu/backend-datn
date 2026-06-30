@@ -7,7 +7,7 @@ import { readFileSync } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const viewsDir = join(__dirname, '..', '..', 'views');
+const viewsDir = join(__dirname, 'views');
 
 function renderEjs(templatePath: string, data: Record<string, any> = {}): string {
   const tmpl = readFileSync(join(viewsDir, templatePath), 'utf-8');
