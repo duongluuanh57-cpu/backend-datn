@@ -50,9 +50,6 @@ export class AuthRegisterService {
         fullName: newUser.fullName || '',
         phoneNumber: newUser.phoneNumber || '',
         gender: newUser.gender || '',
-        address: newUser.address || '',
-        province: newUser.province || '',
-        district: newUser.district || '',
         tenantId: newUser.tenantId,
         createdAt: newUser.createdAt
       },

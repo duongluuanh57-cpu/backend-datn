@@ -64,7 +64,6 @@ export class OAuthService {
       oauthId: profile.id,
       email: profile.email,
       username: profile.name?.replace(/\s+/g, '_').toLowerCase() || `user_${profile.id}`,
-      avatar: profile.picture,
     });
   }
 
@@ -75,7 +74,7 @@ export class OAuthService {
    */
   private static async findOrCreateUser(
     provider: 'google',
-    profile: { oauthId: string; email: string; username: string; avatar?: string }
+    profile: { oauthId: string; email: string; username: string }
   ) {
     // Tìm theo oauthId trước
     let user = await UserRepository.findByOAuthId(provider, profile.oauthId);
@@ -89,7 +88,6 @@ export class OAuthService {
         user = await UserRepository.update(user._id.toString(), {
           oauthProvider: provider,
           oauthId: profile.oauthId,
-          avatar: profile.avatar,
         } as any);
       } else {
         // Tạo user mới hoàn toàn
@@ -98,7 +96,6 @@ export class OAuthService {
           username: profile.username,
           oauthProvider: provider,
           oauthId: profile.oauthId,
-          avatar: profile.avatar,
           tenantId: 'default',
           role: 'USER',
         } as Partial<IUser>);
@@ -107,7 +104,7 @@ export class OAuthService {
 
     const tokens = generateTokens(user!._id.toString(), user!.role, false, (user as any).tenantId || 'default');
     return {
-      user: { id: user!._id, username: user!.username, email: user!.email, avatar: user!.avatar },
+      user: { id: user!._id, username: user!.username, email: user!.email },
       tokens,
     };
   }

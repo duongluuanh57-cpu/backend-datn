@@ -58,13 +58,9 @@ export class AuthProfileController {
       const body = request.body as {
         username?: string;
         email?: string;
-        avatar?: string;
         fullName?: string;
         phoneNumber?: string;
         gender?: string;
-        address?: string;
-        province?: string;
-        district?: string;
       };
       const userId = (request as any).user?.userId;
       if (!userId) throw new UnauthorizedError('Vui lòng đăng nhập');
@@ -93,13 +89,9 @@ export class AuthProfileController {
         updateData.email = trimmedEmail;
       }
 
-      if (body.avatar !== undefined && body.avatar.trim()) updateData.avatar = body.avatar.trim();
       if (body.fullName !== undefined) updateData.fullName = body.fullName.trim();
       if (body.phoneNumber !== undefined) updateData.phoneNumber = body.phoneNumber.trim();
       if (body.gender !== undefined) updateData.gender = body.gender;
-      if (body.address !== undefined) updateData.address = body.address.trim();
-      if (body.province !== undefined) updateData.province = body.province.trim();
-      if (body.district !== undefined) updateData.district = body.district.trim();
 
       if (Object.keys(updateData).length === 0) {
         return reply.status(400).send({ success: false, message: 'Không có thông tin nào để cập nhật' });

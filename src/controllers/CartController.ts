@@ -225,7 +225,6 @@ export class CartController {
       } else {
         await CartItem.create({
           cartId: cart._id,
-          userId: new mongoose.Types.ObjectId(userId),
           tenantId: (req as any).user?.tenantId || 'default',
           productId: new mongoose.Types.ObjectId(productId),
           name: product.name,

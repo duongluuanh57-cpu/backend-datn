@@ -61,8 +61,11 @@ export class PaymentService {
   }
 
   static async create(data: { orderId: string; method: string }, tenantId: string) {
+    // Resolve method code to PaymentMethod ObjectId
+    const paymentMethod = await PaymentMethod.findOne({ code: data.method, tenantId }).lean();
     return Payment.create({
       orderId: data.orderId,
+      paymentMethodId: paymentMethod?._id || undefined,
       method: data.method,
       tenantId,
     });

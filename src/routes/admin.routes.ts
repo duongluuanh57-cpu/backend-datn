@@ -107,13 +107,6 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get('/users', AdminCRUDControllerPart2.userList);
   app.post('/users/:id/delete', AdminCRUDControllerPart2.userDelete);
 
-  // ── AI Create Pages ──
-  app.get('/ai/create-user', AdminPageController.aiCreateUser);
-  app.get('/ai/create-brand', AdminPageController.aiCreateBrand);
-  app.get('/ai/create-category', AdminPageController.aiCreateCategory);
-  app.get('/ai/create-tag', AdminPageController.aiCreateTag);
-  app.get('/ai/create-voucher', AdminPageController.aiCreateVoucher);
-
   // ── Media Library ──
   app.get('/media', AdminPageController.mediaPage);
 

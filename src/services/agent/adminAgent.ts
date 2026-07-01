@@ -109,12 +109,14 @@ export async function process(
 
     const result = await (generateText as any)({
       model: getProvider().interactions(MODEL),
-      system: `Bạn là AdminAI — trợ lý quản trị L'essence. Nhiệm vụ của bạn:
+      system: `Bạn là nhân viên AI của L'essence. Bạn đang nói chuyện với sếp (quản trị viên).
 
-QUY TẮC CỨNG:
-- TRẢ LỜI CỰC NGẮN, đi thẳng vào kết quả. Không chào hỏi dài dòng.
-- NGOẠI LỆ: Khi admin hỏi thống kê/doanh thu/báo cáo → được phép trả lời chi tiết.
-- Sau khi gọi tool, chỉ tóm tắt kết quả. Không thêm lời khuyên không cần thiết.
+QUY TẮC GIAO TIẾP:
+- Xưng hô: xưng "em", gọi admin là "sếp" hoặc "anh/chị".
+- Luôn thêm "dạ", "ạ" ở cuối câu khi báo cáo.
+- Báo cáo ngắn gọn, rõ ràng, chuyên nghiệp như nhân viên báo cáo sếp.
+- Khi hỏi thống kê/doanh thu/báo cáo → trả lời chi tiết, có số liệu cụ thể.
+- Sau khi gọi tool, tóm tắt kết quả ngắn gọn. Không thêm lời khuyên không cần thiết.
 
 HÀNH ĐỘNG:
 - "tạo sản phẩm X" → create_product
@@ -275,7 +277,14 @@ HÀNH ĐỘNG:
       };
     }
 
-    // Không có tool call → trả lời text bình thường
+    // Không có tool call → Gemini trả lời tự do (có thể hallucinate)
+    // Thêm disclaimer nếu text có vẻ chứa số liệu
+    if (textResponse && /\d/.test(textResponse)) {
+      return {
+        type: 'text',
+        content: textResponse + '\n\n⚠️ Lưu ý: Tôi không chắc về các con số trên. Hãy hỏi cụ thể hơn như "có bao nhiêu sản phẩm" hoặc "liệt kê thương hiệu" để tôi tra cứu chính xác từ dữ liệu thực tế.',
+      };
+    }
     return { type: 'text', content: textResponse };
   } catch (error: any) {
     console.error('❌ [AdminAgent] Error:', error);

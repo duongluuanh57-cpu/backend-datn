@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import * as crypto from 'crypto';
 import { PendingPayment } from '../models/PendingPayment.ts';
 import { Payment } from '../models/Payment.ts';
+import { PaymentMethod } from '../models/PaymentMethod.ts';
 import { Order } from '../models/Order.ts';
 import { OrderItem } from '../models/OrderItem.ts';
 import { Brand } from '../models/Brand.ts';
@@ -255,10 +256,14 @@ export class VNPayController {
         }
       }
 
+      // Resolve paymentMethodId for 'vnpay'
+      const vnpayMethod = await PaymentMethod.findOne({ code: 'vnpay', tenantId: pendingPayment.tenantId }).lean();
+
       // Tạo Payment record
       await Payment.create({
         tenantId: pendingPayment.tenantId,
         orderId: order._id,
+        paymentMethodId: vnpayMethod?._id || undefined,
         method: 'vnpay',
         status: 'paid',
         transactionCode: transactionNo || undefined,

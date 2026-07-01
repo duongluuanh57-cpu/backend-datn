@@ -1,4 +1,4 @@
-<%# AI Chat Panel — toggleable right sidebar %>
+<%# AI Chat Panel — toggleable right sidebar (interview now inline) %>
 <div id="aiChatPanel" style="position:fixed;top:var(--header-h);right:-380px;width:380px;height:calc(100vh - var(--header-h));background:var(--bg-darker);border-left:1px solid var(--border);z-index:35;transition:right 0.3s ease;display:flex;flex-direction:column;">
   <div style="padding:16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
     <span style="font-weight:600;font-size:14px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;vertical-align:middle;margin-right:6px;"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg> AI Assistant</span>
@@ -20,6 +20,51 @@
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
 </button>
 
+<style>
+  @keyframes dot-blink { 0%,20%{opacity:0} 50%{opacity:1} 80%,100%{opacity:0} }
+  .think-dot { display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--text-muted);animation:dot-blink 1.4s infinite; }
+  .think-dot:nth-child(2) { animation-delay:0.2s; }
+  .think-dot:nth-child(3) { animation-delay:0.4s; }
+  #aiInput.editing { border:2px dashed var(--color-primary); outline:none; box-shadow:0 0 0 3px rgba(201,169,110,0.12); }
+  .brand-option { display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;color:var(--text-primary);transition:all 0.15s;margin-bottom:4px; }
+  .brand-option:hover { border-color:var(--accent);background:rgba(201,169,110,0.05); }
+  .brand-option.selected { border-color:var(--accent);background:rgba(201,169,110,0.1); }
+  .brand-search { width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;color:var(--text-primary);background:var(--bg);box-sizing:border-box;margin-bottom:8px; }
+  .brand-search:focus { outline:none;border-color:var(--accent); }
+
+  /* ── Inline interview styles ── */
+  .iv-option { display:flex; align-items:center; gap:10px; padding:10px 14px; border:1px solid var(--border); border-radius:10px; cursor:pointer; transition:all 0.15s; margin-bottom:6px; }
+  .iv-option:hover { border-color:var(--accent); background:rgba(201,169,110,0.05); }
+  .iv-option.selected { border-color:var(--accent); background:rgba(201,169,110,0.1); }
+  .iv-option input[type="checkbox"], .iv-option input[type="radio"] { accent-color:var(--accent); width:16px; height:16px; flex-shrink:0; }
+  .iv-opt-label { font-size:13px; font-weight:500; color:var(--text-primary); }
+  .iv-opt-desc { font-size:11px; color:var(--text-muted); margin-top:2px; }
+  .iv-btn { padding:8px 20px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; border:none; transition:all 0.15s; }
+  .iv-btn-primary { background:var(--accent); color:#fff; }
+  .iv-btn-primary:hover { opacity:0.9; }
+  .iv-btn-secondary { background:var(--surface); color:var(--text-primary); border:1px solid var(--border); }
+  .iv-btn-secondary:hover { border-color:var(--accent); }
+  .iv-btn-skip { background:transparent; color:var(--text-muted); border:1px dashed var(--border); }
+  .iv-btn-skip:hover { border-color:var(--accent); color:var(--accent); }
+  .iv-confirm-item { padding:10px 14px; border:1px solid var(--border); border-radius:10px; margin-bottom:6px; }
+  .iv-ci-label { font-size:13px; font-weight:600; color:var(--text-primary); }
+  .iv-ci-value { font-size:12px; color:var(--text-muted); margin-top:4px; }
+  .iv-tag-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .iv-tag-opt { display:flex; align-items:center; gap:8px; padding:8px 12px; border:1px solid var(--border); border-radius:8px; cursor:pointer; font-size:12px; color:var(--text-primary); transition:all 0.15s; }
+  .iv-tag-opt:hover { border-color:var(--accent); }
+  .iv-tag-opt.selected { border-color:var(--accent); background:rgba(201,169,110,0.1); }
+  .iv-tag-opt input { accent-color:var(--accent); }
+  .iv-date-row { display:flex; gap:12px; }
+  .iv-date-row > div { flex:1; }
+  .iv-date-row label { display:block; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:4px; }
+  .iv-date-row input { width:100%; padding:8px 12px; border:1px solid var(--border); border-radius:8px; font-size:13px; font-family:inherit; color:var(--text-primary); background:var(--bg); box-sizing:border-box; }
+  .iv-date-row input:focus { outline:none; border-color:var(--accent); }
+  .iv-progress { display:flex; gap:4px; margin-bottom:16px; }
+  .iv-progress-dot { width:8px; height:8px; border-radius:50%; background:var(--border); }
+  .iv-progress-dot.active { background:var(--accent); }
+  .iv-progress-dot.done { background:#16a34a; }
+</style>
+
 <script>
 var aiOpen = false;
 function escapeHtml(str) {
@@ -31,47 +76,182 @@ function toggleAIChat() {
   document.getElementById('aiChatPanel').style.right = aiOpen ? '0' : '-380px';
   document.getElementById('aiChatToggle').style.display = aiOpen ? 'none' : 'flex';
 }
-function sendAIMessage() {
-  var input = document.getElementById('aiInput');
-  var msg = input.value.trim();
-  if (!msg) return;
+var _aiLoading = false;
+var _aiLoadingEl = null;
+var _chatHistory = [];
+var MAX_HISTORY = 20;
+
+// ── Bubble helpers ──
+function aiBubble(html, extraStyle) {
+  return '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--color-text-secondary);align-self:flex-start;max-width:85%;white-space:pre-line;' + (extraStyle||'') + '">' + html + '</div>';
+}
+function appendBubble(html, extraStyle) {
+  var c = document.getElementById('aiMessages');
+  c.innerHTML += aiBubble(html, extraStyle);
+  c.scrollTop = c.scrollHeight;
+}
+function showThinking() {
+  _aiLoading = true;
   var container = document.getElementById('aiMessages');
-  container.innerHTML += '<div style="background:var(--color-primary);padding:10px 14px;border-radius:10px;font-size:13px;color:#fff;align-self:flex-end;max-width:85%;">' + escapeHtml(msg) + '</div>';
-  input.value = '';
+  _aiLoadingEl = document.createElement('div');
+  _aiLoadingEl.style.cssText = 'background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--color-text-secondary);align-self:flex-start;max-width:85%;';
+  _aiLoadingEl.innerHTML = '<span class="think-dot"></span><span class="think-dot"></span><span class="think-dot"></span>';
+  container.appendChild(_aiLoadingEl);
+  container.scrollTop = container.scrollHeight;
+}
+function hideThinking() {
+  _aiLoading = false;
+  if (_aiLoadingEl) { _aiLoadingEl.remove(); _aiLoadingEl = null; }
+}
+
+function sendAIMessage(msgOverride) {
+  var input = document.getElementById('aiInput');
+  var msg = msgOverride || input.value.trim();
+  if (!msg || _aiLoading) return;
+  var container = document.getElementById('aiMessages');
+
+  var userBubble = document.createElement('div');
+  userBubble.style.cssText = 'background:var(--color-primary);padding:10px 14px 10px 14px;border-radius:10px;font-size:13px;color:#fff;align-self:flex-end;max-width:85%;display:flex;align-items:flex-start;gap:8px;';
+  userBubble.innerHTML =
+    '<span style="flex:1;word-break:break-word;">' + escapeHtml(msg) + '</span>' +
+    '<span onclick="editUserMessage(this)" data-msg="' + escapeHtml(msg.replace(/"/g,'"')) + '" style="flex-shrink:0;cursor:pointer;opacity:0.5;margin-top:1px;transition:opacity 0.15s;" onmouseenter="this.style.opacity=\'1\'" onmouseleave="this.style.opacity=\'0.5\'" title="Sửa câu hỏi">' +
+      '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>' +
+    '</span>';
+  container.appendChild(userBubble);
+
+  if (!msgOverride) input.value = '';
+  showThinking();
+  _chatHistory.push({ role: 'user', content: msg });
+  if (_chatHistory.length > MAX_HISTORY) _chatHistory = _chatHistory.slice(-MAX_HISTORY);
   fetch('/api/ai/admin/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (window.API_TOKEN || '') },
-    body: JSON.stringify({ message: msg })
+    body: JSON.stringify({ message: msg, history: _chatHistory })
   }).then(function(r) {
     var contentType = r.headers.get('content-type') || '';
     if (contentType.includes('application/json')) {
       return r.json().then(function(d) {
-        // Kiểm tra interview trigger
-        if (d.type === 'interview_trigger') {
-          return { isInterview: true, brandName: d.brandName, message: d.message };
-        }
-        return { isInterview: false, text: d.reply || d.content || 'Xin lỗi, tôi chưa hiểu câu hỏi này.' };
+        if (d.type === 'interview_trigger') return { isInterview: true, brandName: d.brandName, message: d.message };
+        if (d.type === 'create_choice') return { isCreateChoice: true, message: d.message };
+        if (d.type === 'entity_preview') return { isEntity: true, entity: d.entity, data: d.data, message: d.message };
+        if (d.type === 'entity_created') return { isCreated: true, message: d.message };
+        if (d.error) return { isError: true, message: d.error };
+        return { text: d.reply || d.content || 'Xin lỗi, tôi chưa hiểu câu hỏi này.' };
       });
     }
-    return { isInterview: false, text: r.text() };
+    return r.text().then(function(txt) { return { text: txt }; });
   }).then(function(reply) {
-    if (reply.isInterview) {
-      // Hiển thị tin nhắn xác nhận
-      container.innerHTML += '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--color-text-secondary);align-self:flex-start;max-width:85%;">' + escapeHtml(reply.message) + '</div>';
-      container.scrollTop = container.scrollHeight;
-      // Mở interview popup
-      startInterview(reply.brandName);
-    } else {
-      container.innerHTML += '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--color-text-secondary);align-self:flex-start;max-width:85%;">' + escapeHtml(reply.text) + '</div>';
-      container.scrollTop = container.scrollHeight;
+    hideThinking();
+    if (reply.isError) {
+      container.innerHTML += '<div style="background:var(--bg-card);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--danger);align-self:flex-start;max-width:85%;white-space:pre-line;">' + escapeHtml(reply.message) + '</div>';
+      container.scrollTop = container.scrollHeight; return;
     }
-  }).catch(function() {
-    container.innerHTML += '<div style="background:var(--bg-card);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--danger);align-self:flex-start;max-width:85%;">Lỗi kết nối đến AI server</div>';
+    if (reply.isInterview) {
+      appendBubble(escapeHtml(reply.message));
+      startInterviewInline(reply.brandName);
+    } else if (reply.isCreateChoice) {
+      renderCreateChoice(container, reply.message);
+    } else if (reply.isEntity) {
+      renderEntityPreview(container, reply.entity, reply.data, reply.message);
+    } else if (reply.isCreated) {
+      appendBubble(escapeHtml(reply.message), 'color:#16a34a;');
+    } else {
+      appendBubble(escapeHtml(reply.text));
+      _chatHistory.push({ role: 'assistant', content: reply.text || reply.message || '' });
+      if (_chatHistory.length > MAX_HISTORY) _chatHistory = _chatHistory.slice(-MAX_HISTORY);
+    }
+  }).catch(function(err) {
+    hideThinking();
+    container.innerHTML += '<div style="background:var(--bg-card);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--danger);white-space:pre-line;">Lỗi kết nối: ' + escapeHtml(err ? err.message || err : 'unknown') + '</div>';
   });
 }
 
-// ── Interview Popup Integration ──
-function startInterview(brandName) {
+// ── Inline Edit ──
+function editUserMessage(el) {
+  if (_aiLoading) return;
+  var bubble = el.closest('div'); if (!bubble) return;
+  var textSpan = bubble.querySelector('span:first-child');
+  var oldMsg = (textSpan ? textSpan.textContent : '') || el.getAttribute('data-msg') || '';
+  if (!oldMsg) return;
+  var editHTML =
+    '<textarea id="inlineEditMsg" style="flex:1;background:transparent;border:2px dashed rgba(255,255,255,0.6);border-radius:8px;padding:6px 8px;color:#fff;font-size:13px;font-family:inherit;resize:none;outline:none;min-height:28px;">' +
+    escapeHtml(oldMsg) + '</textarea>' +
+    '<button onclick="submitInlineEdit()" style="flex-shrink:0;background:#fff;color:var(--color-primary);border:none;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:600;cursor:pointer;">Gửi</button>';
+  bubble.innerHTML = editHTML;
+  var ta = bubble.querySelector('#inlineEditMsg'); ta.focus(); ta.select();
+  ta.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitInlineEdit(); }
+    if (e.key === 'Escape') { cancelInlineEdit(bubble, oldMsg); }
+  });
+  bubble._oldMsg = oldMsg;
+}
+function submitInlineEdit() {
+  var bubble = document.querySelector('#aiMessages div[style] #inlineEditMsg');
+  if (!bubble) return; bubble = bubble.closest('div'); if (!bubble) return;
+  var ta = bubble.querySelector('#inlineEditMsg'); var newMsg = ta ? ta.value.trim() : '';
+  if (!newMsg) return;
+  var escapedNew = escapeHtml(newMsg);
+  bubble.innerHTML = '<span style="flex:1;word-break:break-word;">' + escapedNew + '</span>' +
+    '<span onclick="editUserMessage(this)" data-msg="' + escapeHtml(newMsg.replace(/"/g,'"')) + '" style="flex-shrink:0;cursor:pointer;opacity:0.5;margin-top:1px;transition:opacity 0.15s;" onmouseenter="this.style.opacity=\'1\'" onmouseleave="this.style.opacity=\'0.5\'" title="Sửa câu hỏi">' +
+      '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg></span>';
+  var next = bubble.nextElementSibling; while (next) { var toRemove = next; next = next.nextElementSibling; toRemove.remove(); }
+  resendMessage(newMsg);
+}
+function resendMessage(msg) {
+  if (!msg || _aiLoading) return;
+  var container = document.getElementById('aiMessages'); showThinking();
+  fetch('/api/ai/admin/chat', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (window.API_TOKEN || '') },
+    body: JSON.stringify({ message: msg })
+  }).then(function(r) {
+    var ct = r.headers.get('content-type') || '';
+    if (ct.includes('application/json')) return r.json().then(function(d) {
+      if (d.type === 'interview_trigger') return { isInterview: true, brandName: d.brandName, message: d.message };
+      if (d.type === 'create_choice') return { isCreateChoice: true, message: d.message };
+      if (d.type === 'entity_preview') return { isEntity: true, entity: d.entity, data: d.data, message: d.message };
+      if (d.type === 'entity_created') return { isCreated: true, message: d.message };
+      if (d.error) return { isError: true, message: d.error };
+      return { text: d.reply || d.content || 'Xin lỗi, tôi chưa hiểu câu hỏi này.' };
+    });
+    return r.text().then(function(txt) { return { text: txt }; });
+  }).then(function(reply) {
+    hideThinking();
+    if (reply.isError) { appendBubble(escapeHtml(reply.message), 'color:var(--danger);'); return; }
+    if (reply.isInterview) { appendBubble(escapeHtml(reply.message)); startInterviewInline(reply.brandName); }
+    else if (reply.isCreateChoice) { renderCreateChoice(container, reply.message); }
+    else if (reply.isEntity) { renderEntityPreview(container, reply.entity, reply.data, reply.message); }
+    else if (reply.isCreated) { appendBubble(escapeHtml(reply.message), 'color:#16a34a;'); }
+    else { appendBubble(escapeHtml(reply.text)); }
+  }).catch(function(err) { hideThinking(); appendBubble('Lỗi: ' + escapeHtml(err?err.message||err:''), 'color:var(--danger);'); });
+}
+function cancelInlineEdit(bubble, oldMsg) {
+  if (!bubble || !oldMsg) return;
+  bubble.innerHTML = '<span style="flex:1;word-break:break-word;">' + escapeHtml(oldMsg) + '</span>' +
+    '<span onclick="editUserMessage(this)" data-msg="' + escapeHtml(oldMsg.replace(/"/g,'"')) + '" style="flex-shrink:0;cursor:pointer;opacity:0.5;margin-top:1px;transition:opacity 0.15s;" onmouseenter="this.style.opacity=\'1\'" onmouseleave="this.style.opacity=\'0.5\'" title="Sửa câu hỏi">' +
+      '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg></span>';
+}
+var pendingEntityData = null; var pendingEntityType = null;
+function renderEntityPreview(container, entity, data, message) {
+  pendingEntityData = data; pendingEntityType = entity;
+  var html = '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--color-text-secondary);align-self:flex-start;max-width:85%;">';
+  html += '<div style="white-space:pre-line;margin-bottom:10px;">' + escapeHtml(message) + '</div>';
+  html += '<div style="display:flex;gap:8px;"><button onclick="confirmCreateEntity()" style="padding:6px 14px;background:#16a34a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;">✅ Tạo luôn</button><button onclick="cancelCreateEntity()" style="padding:6px 14px;background:var(--bg);color:var(--text-muted);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px;">Hủy</button></div></div>';
+  container.innerHTML += html; container.scrollTop = container.scrollHeight;
+}
+function confirmCreateEntity() {
+  if (!pendingEntityType || !pendingEntityData) return;
+  var c = document.getElementById('aiMessages');
+  c.innerHTML += '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--text-muted);align-self:flex-start;max-width:85%;">⏳ Đang tạo...</div>'; c.scrollTop = c.scrollHeight;
+  fetch('/api/ai/admin/chat', { method:'POST', headers:{ 'Content-Type':'application/json','Authorization':'Bearer '+(window.API_TOKEN||'') }, body:JSON.stringify({ message:'.confirm',action:'confirm_create',entity:pendingEntityType,data:pendingEntityData }) })
+  .then(function(r){return r.json();}).then(function(d){ c.innerHTML += '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:'+(d.type==='entity_created'?'#16a34a':'var(--danger)')+';align-self:flex-start;max-width:85%;">'+escapeHtml(d.message)+'</div>'; c.scrollTop = c.scrollHeight; })
+  .catch(function(){ c.innerHTML += '<div style="background:var(--bg-card);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--danger);align-self:flex-start;max-width:85%;">Lỗi khi tạo</div>'; });
+  pendingEntityData = null; pendingEntityType = null;
+}
+function cancelCreateEntity() { var c = document.getElementById('aiMessages'); c.innerHTML += '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--text-muted);align-self:flex-start;max-width:85%;">Đã hủy.</div>'; c.scrollTop = c.scrollHeight; pendingEntityData = null; pendingEntityType = null; }
+
+// ── Brand Selection (inline) ──
+function startInterviewInline(brandName) {
+  showThinking();
   fetch('/api/ai/admin/product-interview', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (window.API_TOKEN || '') },
@@ -79,14 +259,356 @@ function startInterview(brandName) {
   })
   .then(function(r) { return r.json(); })
   .then(function(res) {
-    if (res.error) { alert(res.error); return; }
-    // Open popup (defined in ai-interview-popup.ejs)
-    if (typeof openInterview === 'function') {
-      openInterview(res.sessionId, res.response);
-    }
+    hideThinking();
+    if (res.error) { appendBubble('Lỗi: ' + escapeHtml(res.error), 'color:var(--danger);'); return; }
+    ivSessionId = res.sessionId;
+    ivState = res.response;
+    renderInterviewStepInline(res.response);
+  })
+  .catch(function(err) { hideThinking(); appendBubble('Lỗi kết nối: ' + escapeHtml(err.message), 'color:var(--danger);'); });
+}
+
+function renderCreateChoice(container, message) {
+  var html = '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--color-text-secondary);align-self:flex-start;max-width:85%;">';
+  html += '<div style="margin-bottom:10px;">' + escapeHtml(message) + '</div>';
+  html += '<div style="display:flex;gap:8px;">';
+  html += '<button onclick="pickExistingBrand()" style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;">📋 Brand có sẵn</button>';
+  html += '<button onclick="pickNewBrand()" style="padding:8px 16px;background:var(--bg);color:var(--text-primary);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;">✨ Brand mới</button>';
+  html += '</div></div>';
+  container.innerHTML += html; container.scrollTop = container.scrollHeight;
+}
+function pickExistingBrand() { renderBrandList(document.getElementById('aiMessages'), ''); }
+function pickNewBrand() {
+  var c = document.getElementById('aiMessages');
+  _aiLoading = true;
+  fetch('/api/ai/admin/random-brands', { headers: { 'Authorization': 'Bearer ' + (window.API_TOKEN || '') } })
+    .then(function(r) { return r.json(); }).then(function(res) {
+      _aiLoading = false;
+      if (!res.success || !res.data || !res.data.length) { c.innerHTML += '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--danger);align-self:flex-start;max-width:85%;">Không lấy được danh sách brand ạ.</div>'; c.scrollTop = c.scrollHeight; return; }
+      var html = '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--color-text-secondary);align-self:flex-start;max-width:85%;">';
+      html += '<div style="margin-bottom:8px;">Dạ em gợi ý 5 brand ngẫu nhiên ạ:</div>';
+      res.data.forEach(function(b) { html += '<div class="brand-option" onclick="selectBrand(\'' + b.name + '\')">' + escapeHtml(b.name) + (b.origin ? ' <span style="color:var(--text-muted);font-size:11px;">(' + escapeHtml(b.origin) + ')</span>' : '') + '</div>'; });
+      html += '<button onclick="pickNewBrand()" style="margin-top:8px;padding:6px 12px;background:var(--bg);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:11px;">🔄 Đổi brand khác</button>';
+      html += '</div>'; c.innerHTML += html; c.scrollTop = c.scrollHeight;
+    }).catch(function(err) { _aiLoading = false; c.innerHTML += '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--danger);align-self:flex-start;max-width:85%;">Lỗi: ' + escapeHtml(err.message) + '</div>'; c.scrollTop = c.scrollHeight; });
+}
+function renderBrandList(container, brandName) {
+  _aiLoading = true;
+  fetch('/api/brands?page=1&limit=200', { headers: { 'Authorization': 'Bearer ' + (window.API_TOKEN || '') } })
+    .then(function(r) { return r.json(); }).then(function(res) {
+      _aiLoading = false;
+      var brands = res.data || [];
+      if (!brands.length) { container.innerHTML += '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--danger);align-self:flex-start;max-width:85%;">Chưa có brand nào ạ.</div>'; container.scrollTop = container.scrollHeight; return; }
+      var html = '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--color-text-secondary);align-self:flex-start;max-width:85%;">';
+      html += '<div style="margin-bottom:8px;">Dạ sếp chọn brand muốn tạo sản phẩm ạ:</div>';
+      html += '<input class="brand-search" type="text" placeholder="Tìm brand..." oninput="filterBrands(this.value)">';
+      html += '<div id="brandListWrap" style="max-height:200px;overflow-y:auto;">';
+      brands.forEach(function(b) { html += '<div class="brand-option" data-brand-name="' + escapeHtml(b.name.toLowerCase()) + '" onclick="selectBrand(\'' + escapeHtml(b.name) + '\')">' + escapeHtml(b.name) + (b.origin ? ' <span style="color:var(--text-muted);font-size:11px;">(' + escapeHtml(b.origin) + ')</span>' : '') + '</div>'; });
+      html += '</div></div>';
+      container.innerHTML += html; container.scrollTop = container.scrollHeight;
+    }).catch(function(err) { _aiLoading = false; container.innerHTML += '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--danger);align-self:flex-start;max-width:85%;">Lỗi: ' + escapeHtml(err.message) + '</div>'; container.scrollTop = container.scrollHeight; });
+}
+function filterBrands(q) {
+  var opts = document.querySelectorAll('#brandListWrap .brand-option');
+  var lq = (q || '').toLowerCase();
+  opts.forEach(function(opt) { var name = opt.getAttribute('data-brand-name') || ''; opt.style.display = (!lq || name.indexOf(lq) >= 0) ? '' : 'none'; });
+}
+function selectBrand(brandName) {
+  sendAIMessage('tạo sản phẩm cho hãng ' + brandName);
+}
+
+// ═══════════════════════════════════════════
+// ── INLINE INTERVIEW WIZARD (No Popup!) ──
+// ═══════════════════════════════════════════
+
+var ivSessionId = null;
+var ivState = null;
+
+function renderInterviewStepInline(res) {
+  if (!res) { closeInterviewInline(); return; }
+  var title = res.title || '';
+  var subtitle = res.subtitle || '';
+  var header = (title ? '**' + escapeHtml(title) + '**' : '') + (subtitle ? '\n' + escapeHtml(subtitle) : '');
+  var bodyEl = document.createElement('div');
+  bodyEl.style.cssText = 'flex-direction:column;gap:8px;width:100%;';
+  bodyEl.className = 'iv-step-body';
+  var footerEl = document.createElement('div');
+  footerEl.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;';
+  footerEl.className = 'iv-step-footer';
+
+  function addToBubble(bodyHtml, footerHtml) {
+    var wrap = document.createElement('div');
+    wrap.style.cssText = 'background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--color-text-secondary);align-self:flex-start;max-width:85%;';
+    // Clear all previous iv-step containers so only the latest step is interactive
+    document.querySelectorAll('.iv-step-body').forEach(function(el){ el.closest('div[style*="border-radius:10px"]')?.remove(); });
+    // Also clear iv-step-footer siblings
+    wrap.innerHTML = (header ? '<div style="white-space:pre-line;margin-bottom:8px;font-weight:500;">' + header + '</div>' : '') + bodyHtml + footerHtml;
+    var c = document.getElementById('aiMessages');
+    c.appendChild(wrap);
+    c.scrollTop = c.scrollHeight;
+  }
+
+  switch (res.type) {
+    case 'select_products':
+      (function(){
+        var h = '<div class="iv-progress">';
+        for (var i=0;i<res.options.length;i++) h+='<div class="iv-progress-dot"></div>';
+        h += '</div><div style="max-height:250px;overflow-y:auto;">';
+        for (var i=0;i<res.options.length;i++) {
+          var opt = res.options[i];
+          h += '<div class="iv-option" onclick="ivToggleSelectProduct('+i+')" id="ivselopt_'+i+'">';
+          h += '<input type="checkbox" id="ivselchk_'+i+'">';
+          h += '<div><div class="iv-opt-label">'+escapeHtml(opt.name)+'</div>';
+          h += '<div class="iv-opt-desc">'+escapeHtml(opt.description)+'</div></div></div>';
+        }
+        h += '</div>';
+        var f = '<button class="iv-btn iv-btn-skip" onclick="ivSkipAllProducts()">⚡ Bỏ qua → Chọn tất cả</button>' +
+                '<button class="iv-btn iv-btn-primary" onclick="ivConfirmProducts()" style="margin-left:auto;">✅ Xác nhận</button>';
+        addToBubble(h, f);
+      })();
+      break;
+
+    case 'select_products_scroll':
+      // Same as select_products but with scrollable list — treated identically
+      (function(){
+        var h = '<div class="iv-progress">';
+        for (var i=0;i<res.options.length;i++) h+='<div class="iv-progress-dot"></div>';
+        h += '</div><div style="max-height:250px;overflow-y:auto;">';
+        for (var i=0;i<res.options.length;i++) {
+          var opt = res.options[i];
+          h += '<div class="iv-option" onclick="ivToggleSelectProduct('+i+')" id="ivselopt_'+i+'">';
+          h += '<input type="checkbox" id="ivselchk_'+i+'">';
+          h += '<div><div class="iv-opt-label">'+escapeHtml(opt.name)+'</div>';
+          h += '<div class="iv-opt-desc">'+escapeHtml(opt.description)+'</div></div></div>';
+        }
+        h += '</div>';
+        var f = '<button class="iv-btn iv-btn-skip" onclick="ivSkipAllProducts()">⚡ Bỏ qua → Chọn tất cả</button>' +
+                '<button class="iv-btn iv-btn-primary" onclick="ivConfirmProducts()" style="margin-left:auto;">✅ Xác nhận</button>';
+        addToBubble(h, f);
+      })();
+      break;
+
+    case 'choice_single':
+      (function(){
+        var h = '';
+        for (var i=0;i<res.options.length;i++) {
+          var opt = res.options[i];
+          h += '<div class="iv-option" onclick="ivSelectSingle(this,\''+opt.value+'\')" data-value="'+opt.value+'">';
+          h += '<input type="radio" name="iv_single" value="'+opt.value+'"'+(opt.value===res.defaultValue?' checked':'')+'>';
+          h += '<div><div class="iv-opt-label">'+escapeHtml(opt.label)+'</div>';
+          if (opt.description) h += '<div class="iv-opt-desc">'+escapeHtml(opt.description)+'</div>';
+          h += '</div></div>';
+        }
+        var f = '<button class="iv-btn iv-btn-secondary" onclick="ivGoBack()">⬅️ Quay lại</button>' +
+                (res.allowSkip ? '<button class="iv-btn iv-btn-skip" onclick="ivSkipField(\''+res.field+'\')">Bỏ qua</button>' : '') +
+                '<button class="iv-btn iv-btn-primary" onclick="ivConfirmSingle(\''+res.field+'\')" style="margin-left:auto;">✅ Xác nhận</button>';
+        addToBubble(h, f);
+        // Auto-select default
+        setTimeout(function(){
+          var def = document.querySelector('input[name="iv_single"][value="'+res.defaultValue+'"]');
+          if (def) { def.checked = true; def.closest('.iv-option').classList.add('selected'); }
+        }, 50);
+      })();
+      break;
+
+    case 'choice_multi':
+      (function(){
+        var h = '<div class="iv-tag-grid">';
+        for (var i=0;i<res.options.length;i++) {
+          var opt = res.options[i];
+          h += '<div class="iv-tag-opt" onclick="ivToggleTag(this,\''+opt.value+'\')" data-value="'+opt.value+'">';
+          h += '<input type="checkbox" value="'+opt.value+'">';
+          h += '<span>'+escapeHtml(opt.label)+'</span></div>';
+        }
+        h += '</div>';
+        h += '<div style="margin-top:8px;font-size:11px;color:var(--text-muted);">Đã chọn: <span id="ivTagCount">0</span>/'+(res.maxSelect||4)+'</div>';
+        var f = '<button class="iv-btn iv-btn-secondary" onclick="ivGoBack()">⬅️ Quay lại</button>' +
+                (res.allowSkip ? '<button class="iv-btn iv-btn-skip" onclick="ivSkipField(\''+res.field+'\')">Bỏ qua</button>' : '') +
+                '<button class="iv-btn iv-btn-primary" onclick="ivConfirmMulti(\''+res.field+'\')" style="margin-left:auto;">✅ Xác nhận</button>';
+        addToBubble(h, f);
+      })();
+      break;
+
+    case 'input_number':
+      (function(){
+        var h = '<input type="number" id="ivNumInput" class="iv-btn" style="width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;font-family:inherit;color:var(--text-primary);background:var(--bg);box-sizing:border-box;margin-top:8px;" placeholder="'+escapeHtml(res.placeholder||'')+'" min="0">';
+        var f = '<button class="iv-btn iv-btn-secondary" onclick="ivGoBack()">⬅️ Quay lại</button>' +
+                (res.allowSkip ? '<button class="iv-btn iv-btn-skip" onclick="ivSkipField(\''+res.field+'\')">Bỏ qua</button>' : '') +
+                '<button class="iv-btn iv-btn-primary" onclick="ivConfirmNumber(\''+res.field+'\')" style="margin-left:auto;">✅ Xác nhận</button>';
+        addToBubble(h, f);
+      })();
+      break;
+
+    case 'price_suggestion':
+      (function(){
+        function fp(n){return (n||0).toLocaleString('vi-VN');}
+        var h = '<div style="display:flex;flex-direction:column;gap:8px;">';
+        for (var i=0;i<res.options.length;i++) {
+          var opt = res.options[i];
+          h += '<div class="iv-option" onclick="ivSelectSingle(this,\''+opt.value+'\')" data-value="'+opt.value+'">';
+          h += '<input type="radio" name="iv_single" value="'+opt.value+'"'+(i===1?' checked':'')+'>';
+          h += '<div style="flex:1;">';
+          h += '<div class="iv-opt-label">'+escapeHtml(opt.label)+'</div>';
+          h += '<div style="font-size:12px;color:var(--text-primary);font-weight:500;margin:2px 0;">'+fp(opt.price)+'₫</div>';
+          h += '<div style="display:flex;gap:12px;font-size:11px;color:var(--text-muted);">';
+          h += '<span>💰 Vốn: '+fp(opt.costPrice)+'₫</span>';
+          h += '<span style="color:'+(opt.profitPercent>=60?'#16a34a':'#ca8a04')+';font-weight:600;">📈 Lợi nhuận: '+opt.profitPercent+'%</span></div>';
+          if (opt.description) h += '<div class="iv-opt-desc">'+escapeHtml(opt.description)+'</div>';
+          h += '</div></div>';
+        }
+        h += '</div>';
+        var f = '<button class="iv-btn iv-btn-secondary" onclick="ivGoBack()">⬅️ Quay lại</button>' +
+                (res.allowSkip ? '<button class="iv-btn iv-btn-skip" onclick="ivSkipField(\''+res.field+'\')">Bỏ qua</button>' : '') +
+                '<button class="iv-btn iv-btn-primary" onclick="ivConfirmSingle(\''+res.field+'\')" style="margin-left:auto;">✅ Xác nhận</button>';
+        addToBubble(h, f);
+        setTimeout(function(){
+          var m = document.querySelector('input[name="iv_single"][value="'+(res.options[1]?.value||'')+'"]');
+          if (m) { m.checked = true; m.closest('.iv-option').classList.add('selected'); }
+        }, 50);
+      })();
+      break;
+
+    case 'input_date_range':
+      (function(){
+        var today = new Date().toISOString().slice(0,10);
+        var h = '<div class="iv-date-row">' +
+          '<div><label>Ngày bắt đầu</label><input type="date" id="ivDateStart" value="'+today+'" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;color:var(--text-primary);background:var(--bg);box-sizing:border-box;"></div>' +
+          '<div><label>Ngày kết thúc</label><input type="date" id="ivDateEnd" value="" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;color:var(--text-primary);background:var(--bg);box-sizing:border-box;"></div>' +
+          '</div>';
+        var f = '<button class="iv-btn iv-btn-secondary" onclick="ivGoBack()">⬅️ Quay lại</button>' +
+                (res.allowSkip ? '<button class="iv-btn iv-btn-skip" onclick="ivSkipField(\''+res.startField+'\')">Bỏ qua</button>' : '') +
+                '<button class="iv-btn iv-btn-primary" onclick="ivConfirmDateRange(\''+res.startField+'\',\''+res.endField+'\')" style="margin-left:auto;">✅ Xác nhận</button>';
+        addToBubble(h, f);
+      })();
+      break;
+
+    case 'confirm':
+      (function(){
+        var h = '';
+        for (var i=0;i<res.items.length;i++) {
+          h += '<div class="iv-confirm-item">';
+          h += '<div class="iv-ci-label">'+escapeHtml(res.items[i].label)+'</div>';
+          h += '<div class="iv-ci-value">'+escapeHtml(res.items[i].value)+'</div></div>';
+        }
+        var f = '<button class="iv-btn iv-btn-secondary" onclick="ivGoBack()">⬅️ Quay lại</button>' +
+                '<button class="iv-btn iv-btn-primary" onclick="ivConfirmCreate()" style="margin-left:auto;">🚀 Tiến hành tạo</button>';
+        addToBubble(h, f);
+      })();
+      break;
+
+    case 'done':
+      (function(){
+        var h = '<div style="text-align:center;padding:10px 0;"><div style="font-size:32px;margin-bottom:8px;">🎉</div><p style="font-size:14px;color:var(--text-primary);white-space:pre-line;margin:0;">'+escapeHtml(res.message)+'</p></div>';
+        var f = '<button class="iv-btn iv-btn-primary" onclick="closeInterviewInline()" style="margin-left:auto;">✅ Đóng</button>';
+        addToBubble(h, f);
+        closeInterviewInline();
+      })();
+      break;
+  }
+}
+
+// ── Inline Interview Actions ──
+
+var ivSelectedProducts = [];
+function ivToggleSelectProduct(idx) {
+  var chk = document.getElementById('ivselchk_'+idx);
+  var el = document.getElementById('ivselopt_'+idx);
+  if (!chk || !el) return;
+  chk.checked = !chk.checked;
+  el.classList.toggle('selected', chk.checked);
+}
+function ivConfirmProducts() {
+  ivSelectedProducts = [];
+  for (var i=0;i<(ivState.options||[]).length;i++) {
+    var chk = document.getElementById('ivselchk_'+i);
+    if (chk && chk.checked) ivSelectedProducts.push(i);
+  }
+  if (ivSelectedProducts.length === 0) { alert('Vui lòng chọn ít nhất 1 sản phẩm!'); return; }
+  ivSendAction({ type: 'select_products', selectedIndices: ivSelectedProducts });
+}
+function ivSkipAllProducts() {
+  ivSendAction({ type: 'skip_all_products' });
+}
+
+function ivSelectSingle(el, value) {
+  document.querySelectorAll('.iv-step-body .iv-option').forEach(function(e){ e.classList.remove('selected'); });
+  el.classList.add('selected');
+  el.querySelector('input').checked = true;
+}
+function ivConfirmSingle(field) {
+  var selected = document.querySelector('.iv-step-body input[name="iv_single"]:checked');
+  if (!selected) { alert('Vui lòng chọn 1 lựa chọn!'); return; }
+  ivSendAction({ type: 'product_detail', field: field, value: selected.value });
+}
+
+function ivToggleTag(el, value) {
+  var chk = el.querySelector('input');
+  chk.checked = !chk.checked;
+  el.classList.toggle('selected', chk.checked);
+  var count = document.querySelectorAll('.iv-step-body .iv-tag-opt.selected').length;
+  var max = ivState.maxSelect || 4;
+  if (count > max) { chk.checked = false; el.classList.remove('selected'); alert('Chỉ được chọn tối đa '+max+' tag!'); }
+  var tc = document.getElementById('ivTagCount'); if (tc) tc.textContent = Math.min(count, max);
+}
+function ivConfirmMulti(field) {
+  var selected = [];
+  document.querySelectorAll('.iv-step-body .iv-tag-opt.selected').forEach(function(el){ selected.push(el.getAttribute('data-value')); });
+  ivSendAction({ type: 'product_detail', field: field, value: selected });
+}
+
+function ivConfirmNumber(field) {
+  var val = document.getElementById('ivNumInput');
+  var v = val ? val.value.trim() : '';
+  ivSendAction({ type: 'product_detail', field: field, value: v || null });
+}
+
+function ivConfirmDateRange(startField, endField) {
+  var start = document.getElementById('ivDateStart')?.value || '';
+  var end = document.getElementById('ivDateEnd')?.value || '';
+  if (start && end && start > end) { alert('Ngày kết thúc phải sau ngày bắt đầu!'); return; }
+  ivSendAction({ type: 'product_detail', field: startField, value: JSON.stringify({ start: start, end: end }) });
+}
+
+function ivConfirmCreate() {
+  ivSendAction({ type: 'confirm', confirmed: true });
+}
+
+function ivSkipField(field) {
+  ivSendAction({ type: 'product_detail', field: field, value: null });
+}
+
+function ivGoBack() {
+  ivSendAction({ type: 'go_back' });
+}
+
+function closeInterviewInline() {
+  ivSessionId = null;
+  ivState = null;
+  ivSelectedProducts = [];
+  var aiInput = document.getElementById('aiInput');
+  if (aiInput) { aiInput.disabled = false; aiInput.placeholder = 'Nhập câu hỏi...'; }
+}
+
+function ivSendAction(action) {
+  if (!ivSessionId) return;
+  showThinking();
+  fetch('/api/ai/admin/product-interview', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (window.API_TOKEN || '') },
+    body: JSON.stringify({ sessionId: ivSessionId, action: action })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(res) {
+    hideThinking();
+    if (res.error) { appendBubble('Lỗi: ' + escapeHtml(res.error), 'color:var(--danger);'); return; }
+    ivSessionId = res.sessionId;
+    ivState = res.response;
+    renderInterviewStepInline(res.response);
   })
   .catch(function(err) {
-    alert('Lỗi kết nối: ' + err.message);
+    hideThinking();
+    appendBubble('Lỗi kết nối: ' + escapeHtml(err.message), 'color:var(--danger);');
   });
 }
+// ── End Inline Interview ──
 </script>

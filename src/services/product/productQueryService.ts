@@ -162,15 +162,58 @@ export class ProductQueryService {
     const query: any = {};
     if (search) { query.$text = { $search: search }; }
     if (brand) { const brandDoc = await Brand.findOne({ name: { $regex: `^${brand.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } }); if (brandDoc) { query.brandId = brandDoc._id; } else { return { items: [], total: 0, page, totalPages: 0 }; } }
-    if (stock === 'inStock') { query.quantityInStock = { $gt: 0 }; } else if (stock === 'lowStock') { query.quantityInStock = { $gt: 0, $lt: 10 }; } else if (stock === 'outOfStock') { query.quantityInStock = 0; }
+    if (stock === 'inStock' || stock === 'lowStock' || stock === 'outOfStock') {
+      // Stock is stored on ProductVariant, not Product. Aggregate total stock per product from variants.
+      const stockAggregation = await ProductVariant.aggregate([
+        { $match: { tenantId } },
+        { $group: { _id: '$productId', totalStock: { $sum: '$quantityInStock' } } },
+        {
+          $match: stock === 'inStock'
+            ? { totalStock: { $gt: 0 } }
+            : stock === 'lowStock'
+              ? { totalStock: { $gt: 0, $lt: 10 } }
+              : { totalStock: 0 },
+        },
+      ]);
+      const stockProductIds = stockAggregation.map((s: any) => s._id);
+      if (stockProductIds.length === 0) {
+        return { items: [], total: 0, page, totalPages: 0 };
+      }
+      if (query._id) {
+        const existingIds = query._id.$in ? query._id.$in : [query._id];
+        query._id = { $in: existingIds.filter((id: any) => stockProductIds.some((pid: any) => pid.equals(id))) };
+      } else {
+        query._id = { $in: stockProductIds };
+      }
+    }
     if (tag && tag !== 'all') { const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); const tagDoc = await Tag.findOne({ $or: [{ slug: { $regex: `^${escapedTag}$`, $options: 'i' } }, { name: { $regex: `^${escapedTag}$`, $options: 'i' } }] }); if (tagDoc) { const productLinks = await ProductTag.find({ tagId: tagDoc._id }).lean(); const productIds = productLinks.map(l => l.productId); if (productIds.length === 0) { return { items: [], total: 0, page, totalPages: 0 }; } if (query._id) { const existingIds = query._id.$in ? query._id.$in : [query._id]; query._id = { $in: existingIds.filter((id: any) => productIds.some((pid: any) => pid.equals(id))) }; } else { query._id = { $in: productIds }; } } else { return { items: [], total: 0, page, totalPages: 0 }; } }
     if (category) { const categoryDoc = await Category.findOne({ name: { $regex: `^${category.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } }); if (categoryDoc) { query.$and = query.$and || []; query.$and.push({ $or: [{ categories: categoryDoc._id }, { categoryId: categoryDoc._id }] }); } else { return { items: [], total: 0, page, totalPages: 0 }; } }
     let sort: any = { createdAt: -1 };
-    switch (sortBy) { case 'priceAsc': sort = { price: 1 }; break; case 'priceDesc': sort = { price: -1 }; break; case 'stockAsc': sort = { quantityInStock: 1 }; break; case 'stockDesc': sort = { quantityInStock: -1 }; break; case 'rating': sort = { rating: -1, reviewsCount: -1 }; break; case 'newest': sort = { createdAt: -1 }; break; case 'bestSeller': sort = { soldCount: -1, createdAt: -1 }; break; }
+    let stockSortNeeded = false;
+    let stockSortAsc = true;
+    switch (sortBy) {
+      case 'priceAsc': sort = { price: 1 }; break;
+      case 'priceDesc': sort = { price: -1 }; break;
+      case 'stockAsc': stockSortNeeded = true; stockSortAsc = true; break;
+      case 'stockDesc': stockSortNeeded = true; stockSortAsc = false; break;
+      case 'rating': sort = { rating: -1, reviewsCount: -1 }; break;
+      case 'newest': sort = { createdAt: -1 }; break;
+      case 'bestSeller': sort = { soldCount: -1, createdAt: -1 }; break;
+    }
     const total = await Product.countDocuments(query);
     const products = await Product.find(query).select('name brandId image variants categories discountPercentage discountStartDate discountEndDate soldCount createdAt').populate('brandId').populate('categories').sort(sort).skip((page - 1) * limit).limit(limit).lean()
     
-    const items = await formatMultipleProducts(products, tenantId);
+    let items = await formatMultipleProducts(products, tenantId);
+
+    // Stock sort must happen post-query because quantityInStock is computed from variants in formatMultipleProducts
+    if (stockSortNeeded) {
+      items = [...items].sort((a: any, b: any) => {
+        const stockA = a.quantityInStock ?? 0;
+        const stockB = b.quantityInStock ?? 0;
+        return stockSortAsc ? stockA - stockB : stockB - stockA;
+      });
+    }
+
     return { items, total, page, totalPages: Math.ceil(total / limit) };
   }
 

@@ -37,9 +37,6 @@ export class UserAddressController {
 
       const body = req.body as {
         label?: string;
-        fullName?: string;
-        gender?: 'MALE' | 'FEMALE' | 'OTHER' | '';
-        phoneNumber?: string;
         address?: string;
         province?: string;
         district?: string;
@@ -62,9 +59,6 @@ export class UserAddressController {
         tenantId: user.tenantId || 'default',
         userId: new mongoose.Types.ObjectId(userId),
         label: body.label?.trim() || 'Địa chỉ của tôi',
-        fullName: body.fullName?.trim() || (user as any).fullName || user.username,
-        gender: body.gender ?? '',
-        phoneNumber: body.phoneNumber?.trim() || (user as any).phoneNumber || '',
         address: body.address?.trim() || '',
         province: body.province?.trim() || '',
         district: body.district?.trim() || '',
@@ -93,9 +87,6 @@ export class UserAddressController {
 
       const body = req.body as {
         label?: string;
-        fullName?: string;
-        gender?: 'MALE' | 'FEMALE' | 'OTHER' | '';
-        phoneNumber?: string;
         address?: string;
         province?: string;
         district?: string;
@@ -112,9 +103,6 @@ export class UserAddressController {
 
       const updateData: any = {};
       if (body.label !== undefined) updateData.label = body.label.trim();
-      if (body.fullName !== undefined) updateData.fullName = body.fullName.trim();
-      if (body.gender !== undefined) updateData.gender = body.gender;
-      if (body.phoneNumber !== undefined) updateData.phoneNumber = body.phoneNumber.trim();
       if (body.address !== undefined) updateData.address = body.address.trim();
       if (body.province !== undefined) updateData.province = body.province.trim();
       if (body.district !== undefined) updateData.district = body.district.trim();

@@ -50,7 +50,7 @@ export async function getAllOrdersForAdmin(req: FastifyRequest, reply: FastifyRe
 
     const [orders, total] = await Promise.all([
       Order.find(filter)
-        .populate('userId', 'username email avatar')
+        .populate('userId', 'username email')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -97,7 +97,7 @@ export async function getOrderByIdForAdmin(req: FastifyRequest, reply: FastifyRe
       _id: new mongoose.Types.ObjectId(id),
       tenantId,
     })
-      .populate('userId', 'username email avatar phoneNumber fullName')
+      .populate('userId', 'username email phoneNumber fullName')
       .lean();
 
     if (!order) {

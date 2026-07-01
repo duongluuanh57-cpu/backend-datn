@@ -13,13 +13,9 @@ export interface IUser extends Document {
   fullName?: string;
   phoneNumber?: string;
   gender?: 'MALE' | 'FEMALE' | 'OTHER' | '';
-  address?: string;
-  province?: string;
-  district?: string;
   // OAuth fields
   oauthProvider?: 'google' | 'github';  // Provider đăng nhập OAuth
   oauthId?: string;                      // ID từ provider
-  avatar?: string;                       // Ảnh đại diện từ provider
   createdAt: Date;
 }
 
@@ -36,12 +32,8 @@ const UserSchema = new Schema<IUser>(
     fullName: { type: String, default: '' },
     phoneNumber: { type: String, default: '' },
     gender: { type: String, enum: ['MALE', 'FEMALE', 'OTHER', ''], default: '' },
-    address: { type: String, default: '' },
-    province: { type: String, default: '' },
-    district: { type: String, default: '' },
     oauthProvider: { type: String, enum: ['google', 'github'], index: true },
     oauthId: { type: String, index: true },
-    avatar: { type: String },
   },
 
   {

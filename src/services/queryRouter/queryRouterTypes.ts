@@ -30,6 +30,7 @@ export interface RouteInput {
   tenantId: string;
   userRole: UserRole;
   userId?: string;
+  userName?: string;
 }
 
 /** Output từ Query Router */

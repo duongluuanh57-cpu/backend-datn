@@ -95,14 +95,12 @@ export async function aiRoutes(app: FastifyInstance) {
   server.post('/scan-gallery-image', {
     handler: AIVisionController.scanGalleryImage,
   });
-    // GET /api/ai/health - Health check cho AI services
+  // GET /api/ai/health - Health check cho AI services
   server.get('/health', {
     handler: AICoreController.healthCheck,
   });
 
   // ── Product Interview (Multi-step product creation) ──
-  // POST /api/ai/admin/product-interview - Bắt đầu/tiếp tục interview
-  // GET /api/ai/admin/product-interview/check?message=... - Kiểm tra intent
   const { handleProductInterview, checkProductCreationIntent } = await import('../controllers/aiChat/productInterviewController.ts');
   server.post('/admin/product-interview', {
     preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
@@ -111,5 +109,15 @@ export async function aiRoutes(app: FastifyInstance) {
   server.get('/admin/product-interview/check', {
     preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
     handler: checkProductCreationIntent,
+  });
+
+  // GET /api/ai/admin/random-brands — 5 brand random không trùng cho admin chọn khi tạo sp
+  const { Brand } = await import('../models/Brand.ts');
+  server.get('/admin/random-brands', {
+    preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
+    handler: async (_req, reply) => {
+      const brands = await (Brand as any).aggregate([{ $sample: { size: 5 } }, { $project: { _id: 1, name: 1, origin: 1 } }]);
+      return reply.send({ success: true, data: brands });
+    },
   });
 }

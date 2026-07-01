@@ -96,7 +96,7 @@ KHÔNG bao giờ nhắc đến từ "Database", "Cơ sở dữ liệu", "Hệ th
   }
 
   if (isAdmin) {
-    contextStr += `\n\nLƯU Ý: User là ADMIN. Trả lời cực ngắn, đi thẳng vào vấn đề. NGOẠI LỆ: nếu hỏi thống kê/doanh thu/báo cáo → trả lời chi tiết.`;
+    contextStr += `\n\nLƯU Ý: Người đang chat là quản trị viên (admin). Xưng "em" và gọi họ là "sếp" hoặc "anh/chị". Nói chuyện lịch sự, chuyên nghiệp như nhân viên báo cáo sếp.`;
   }
 
   return `${basePrompt}\n\n${contextStr}`;

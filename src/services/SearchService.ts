@@ -72,8 +72,7 @@ async function runKeywordSearch(query: string, tenantId: string, limit: number) 
   let brandProductResults: any[] = [];
   if (brandIds.length > 0) {
     brandProductResults = await Product.find(
-      { tenantId, brandId: { $in: brandIds } },
-      { textScore: { $meta: 'textScore' } }
+      { tenantId, brandId: { $in: brandIds } }
     )
       .sort({ soldCount: -1, rating: -1 })
       .limit(limit)

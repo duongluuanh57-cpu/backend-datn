@@ -70,9 +70,10 @@ export class QueryRouterService {
         case 'greeting': {
           const isAdmin = userRole === 'ADMIN' || userRole === 'SUBADMIN';
           if (isAdmin) {
+            const adminName = input.userName || 'sếp';
             result = {
               type: 'direct',
-              content: "AdminAI sẵn sàng. Bạn cần gì?",
+              content: `Dạ chào ${adminName}, em sẵn sàng hỗ trợ ạ. Sếp cần em tra cứu gì không ạ?`,
             };
           } else {
             const greetings = [
@@ -93,7 +94,7 @@ export class QueryRouterService {
           result = {
             type: 'direct',
             content: isAdmin
-              ? "Chưa rõ yêu cầu. Nói cụ thể hơn nhé."
+              ? "Dạ em chưa nắm rõ ý sếp lắm ạ, sếp có thể nói cụ thể hơn giúp em được không ạ?"
               : "Mình xin lỗi, mình chưa hiểu ý bạn lắm. Bạn có thể nói rõ hơn về nhu cầu của mình không ạ? 🥺 Mình có thể giúp bạn tìm nước hoa theo mùi hương, hãng, hoặc khoảng giá bạn mong muốn!",
           };
           break;
@@ -104,7 +105,7 @@ export class QueryRouterService {
           result = {
             type: 'direct',
             content: isAdmin
-              ? "Không hiểu. Nhập lại rõ hơn."
+              ? "Dạ em chưa hiểu ạ, sếp nhập lại rõ hơn giúp em nhé."
               : "Xin lỗi bạn, mình không hiểu rõ thông tin bạn vừa nhập. Bạn muốn tìm nước hoa với mùi hương như thế nào, hoặc bạn cần mình tư vấn gì không ạ? 😊",
           };
           break;

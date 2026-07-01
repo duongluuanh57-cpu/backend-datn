@@ -65,9 +65,6 @@ export class AuthSessionService {
         fullName: (user as any).fullName || '',
         phoneNumber: (user as any).phoneNumber || '',
         gender: (user as any).gender || '',
-        address: (user as any).address || '',
-        province: (user as any).province || '',
-        district: (user as any).district || '',
         tenantId: (user as any).tenantId,
         createdAt: user.createdAt
       },
